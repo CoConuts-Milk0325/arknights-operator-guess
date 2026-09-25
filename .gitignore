@@ -17,3 +17,8 @@
 !/干员档案展示版/干员档案/*.html
 !/干员档案展示版/非干员档案/
 !/干员档案展示版/非干员档案/*.html
+!/.gitmodules
+!/portal/
+!/portal/index.html
+!/portal/style.css
+!/voice-guess-arknights/

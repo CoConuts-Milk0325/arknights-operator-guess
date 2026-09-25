@@ -1,0 +1,3 @@
+[submodule "voice-guess-arknights"]
+	path = voice-guess-arknights
+	url = https://github.com/CoConuts-Milk0325/voice-guess-arknights.git
