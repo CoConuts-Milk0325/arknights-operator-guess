@@ -1,7 +1,8 @@
 import { cp, mkdir, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root = import.meta.dirname;
+const root = dirname(fileURLToPath(import.meta.url));
 const output = join(root, 'dist');
 const game = join(root, '猜干员网页游戏');
 const archive = join(root, '干员档案展示版');
