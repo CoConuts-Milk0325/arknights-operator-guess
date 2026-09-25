@@ -15,8 +15,9 @@ for (const name of ['游戏样式.css', '游戏逻辑.js', '事实索引.js']) {
   await cp(join(game, name), join(output, name));
 }
 await cp(join(game, '首页.html'), join(output, 'index.html'));
+await cp(join(game, '首页.html'), join(output, '首页.html'));
 
-for (const name of ['首页.html', '档案样式.css', '检索索引.js', '检索功能.js']) {
+for (const name of ['首页.html', '档案样式.css', '检索索引.js', '检索功能.js', '使用说明.md']) {
   await cp(join(archive, name), join(archiveOutput, name));
 }
 for (const name of ['干员档案', '非干员档案']) {
