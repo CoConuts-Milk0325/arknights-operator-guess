@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#182126">
+  <title>密封档案 · 猜干员</title>
+  <link rel="stylesheet" href="游戏样式.css">
+  <script src="事实索引.js" defer></script>
+  <script src="游戏逻辑.js" defer></script>
+</head>
+<body>
+  <div class="page-shell">
+    <header class="topbar">
+      <a class="brand" href="首页.html" aria-label="密封档案首页"><span class="brand-mark" aria-hidden="true">◈</span><span>罗德岛资料终端<small>SEALED DOSSIER / 线索档案</small></span></a>
+      <div class="topbar-right"><span class="data-status" id="data-status">正在读取本地档案…</span><button class="text-button" id="rules-toggle" type="button" aria-expanded="false" aria-controls="rules-panel">判题规则</button></div>
+    </header>
+
+    <aside class="rules-panel" id="rules-panel" hidden>
+      <div><strong>如何游玩</strong><p>每局随机生成四条线索。前四条线索阶段每猜错一次，就自动揭示下一条；也可主动查看下一条线索。四条线索全部公开后，可以不限次数继续猜。猜中或主动放弃后显示答案，点击“下一题”才开始新题。第 1～4 条线索阶段猜中分别得 4、3、2、1 分。</p></div>
+      <div><strong>资料口径</strong><p>候选为国服 431 名干员，阿米娅三个形态分别作答。默认取各干员最高合法精英与等级、最高技能等级、零潜能；专属模组按最高等级计入，可选择不装备。同一条复合线索须由同一技能和模组配置满足；“不止一个技能”这类盘点可比较不同技能，不同线索也可引用不同配置。“没有”“仅能”须检查全部合法配置。召唤物计入干员自身能力。</p></div>
+      <div><strong>伤害与线索</strong><p>伤害类型为物理、法术、真实、元素四种。元素损伤本身不扣血，但干员能使敌人损伤爆发时计入可造成元素伤害；不同名称的控制分别计数。生命回复与直接治疗分开判断。分支星级和满潜费用可少量独立成线索，每题最多一条统计线索。题目在显示前按 431 名候选核对唯一性。</p></div>
+    </aside>
+
+    <main>
+      <section class="intro" id="intro-screen">
+        <div class="intro-copy">
+          <p class="eyebrow"><span class="status-dot"></span> 资料终端 / 随机练习</p>
+          <h1>四条线索，<br><em>锁定一名干员。</em></h1>
+          <p class="intro-description">每局从干员的技能、天赋与特性资料中重新组合线索。线索越少时猜中，得分越高。</p>
+          <div class="intro-actions"><button class="primary-button" id="start-button" type="button">开启一份密封档案 <span aria-hidden="true">↗</span></button><span class="offline-note">离线可玩 · 无固定题目列表</span></div>
+        </div>
+        <div class="intro-art" aria-hidden="true"><div class="archive-tab">RHODES ISLAND // 资料编号</div><div class="archive-seal"><span>机密</span><small>UNKNOWN OPERATOR</small></div><div class="archive-lines"><i></i><i></i><i></i><i></i></div><div class="archive-foot">已验证的唯一解　/　四段线索</div></div>
+      </section>
+
+      <section class="game-screen" id="game-screen" hidden aria-label="猜干员游戏">
+        <div class="game-heading"><div><p class="eyebrow">正在解封 / <span id="round-label">档案 001</span></p><h1>目标干员<span class="redacted" aria-label="身份未公开">██████</span></h1></div><div class="round-status"><span>已公开线索</span><strong id="stage-count">1 <small>/ 4</small></strong><span id="score-label">当前可得 4 分</span></div></div>
+        <div class="game-layout">
+          <div class="clue-area"><div class="section-heading"><h2>线索记录</h2><span>四条组合确定唯一答案</span></div><ol class="clue-list" id="clue-list"></ol></div>
+          <div class="answer-area"><div class="answer-heading"><span class="section-index">ANSWER / 01</span><h2>你认为是谁？</h2><p>输入名称，从档案候选中选择；四条线索公开后可一直猜。</p></div><div class="search-wrap"><label for="operator-search">干员名称</label><input id="operator-search" type="search" autocomplete="off" placeholder="搜索干员名称" role="combobox" aria-autocomplete="list" aria-controls="suggestions" aria-expanded="false"><div class="suggestions" id="suggestions" role="listbox" hidden></div></div><div class="selected-operator" id="selected-operator">尚未选择干员</div><button class="primary-button submit-button" id="submit-button" type="button" disabled>确认猜测 <span aria-hidden="true">→</span></button><div class="stage-actions"><button class="secondary-button" id="next-button" type="button">查看下一条线索</button><button class="text-button" id="give-up-button" type="button">放弃本题</button></div><p class="feedback" id="feedback" role="status" aria-live="polite"></p><div class="guesses"><span>已猜过</span><div id="guesses-list">暂无</div></div></div>
+        </div>
+      </section>
+
+      <section class="result-screen" id="result-screen" hidden aria-label="本局结果"><p class="eyebrow" id="result-kicker">档案已解封</p><div class="result-heading"><div><h1 id="result-title">档案已解封</h1><p id="result-subtitle"></p></div><div class="result-score" id="result-score">+0 <small>分</small></div></div><div class="answer-reveal"><span>目标干员</span><strong id="answer-name"></strong><span id="answer-meta"></span></div><div class="evidence-heading"><h2>线索依据</h2><p>每条线索均来自这名干员的本地档案。</p></div><ol class="evidence-list" id="evidence-list"></ol><div class="result-actions"><a class="secondary-button archive-link" id="archive-link" href="#">查看干员档案 ↗</a><button class="primary-button" id="again-button" type="button">下一题 <span aria-hidden="true">→</span></button></div></section>
+    </main>
+
+    <footer class="footer"><span>RHODES ISLAND / 本地资料实验</span><div><span id="record-summary">已完成 0 局 · 总分 0</span><button class="text-button" id="clear-record-button" type="button">清除记录</button></div></footer>
+  </div>
+</body>
+</html>
