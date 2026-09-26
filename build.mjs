@@ -26,6 +26,7 @@ await mkdir(join(output, '干员档案展示版'), { recursive: true });
 
 await cp(join(root, 'portal', 'index.html'), join(output, 'index.html'));
 await cp(join(root, 'portal', 'style.css'), join(output, 'style.css'));
+await cp(join(root, 'portal', 'assets'), join(output, 'assets'), { recursive: true });
 
 for (const name of ['游戏样式.css', '游戏逻辑.js', '事实索引.js']) {
   await cp(join(game, name), join(output, 'clues', name));

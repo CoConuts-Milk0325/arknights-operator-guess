@@ -3,50 +3,65 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#eeeae0">
-  <meta name="description" content="罗德岛干员辨识训练：从语音和线索出发，认出那位干员。">
-  <title>干员辨识训练 · 罗德岛资料终端</title>
+  <meta name="theme-color" content="#0a0b0d">
+  <meta name="description" content="罗德岛干员辨识考核：听一段语音，或读四条线索，认出那位干员。">
+  <title>认出那位干员 · 罗德岛训练终端</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <div class="site-shell">
-    <header class="site-header">
-      <a class="identity" href="/" aria-label="干员辨识训练首页">
-        <span class="identity-mark" aria-hidden="true">◇</span>
-        <span><strong>罗德岛资料终端</strong><small>OPERATOR RECOGNITION LAB</small></span>
+  <div class="page">
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="罗德岛训练终端首页">
+        <svg class="brand-mark" viewBox="0 0 32 32" width="20" height="20" aria-hidden="true" focusable="false">
+          <path d="M16 2 30 16 16 30 2 16Z" fill="none" stroke="currentColor" stroke-width="2.4"/>
+          <path d="M16 8.5 23.5 16 16 23.5 8.5 16Z" fill="currentColor"/>
+        </svg>
+        <span class="brand-text"><strong>罗德岛 · 训练终端</strong><small>RHODES ISLAND TRAINING TERMINAL</small></span>
       </a>
-      <span class="header-id">TRAINING MODULE <b>02 / 02</b></span>
+      <span class="topbar-note">BY CoConuts Milk</span>
     </header>
 
     <main>
       <section class="hero" aria-labelledby="page-title">
-        <div class="hero-text">
-          <p class="eyebrow"><span class="live-dot" aria-hidden="true"></span> RHODES ISLAND / 训练入口</p>
-          <h1 id="page-title">你认得出<br><em>这位干员</em>吗？</h1>
-          <p class="lead">从一段声音，或四条线索出发。选择一种方式，开始今天的干员辨识训练。</p>
-        </div>
-        <div class="hero-stamp" aria-hidden="true"><span>R.I.</span><small>IDENTITY<br>VERIFICATION</small></div>
+        <p class="eyebrow">PRTS · 干员辨识考核协议</p>
+        <h1 id="page-title">认出那位<em>干员</em></h1>
+        <p class="lead">听一段语音，或者锁定四条线索。</p>
       </section>
 
-      <section class="modules" aria-labelledby="modules-title">
-        <div class="section-heading"><div><span class="section-code">SELECT A MODULE</span><h2 id="modules-title">选择训练项目</h2></div><span class="module-count">02 个项目 / 随时开始</span></div>
-        <div class="module-grid">
-          <article class="module module-voice">
-            <div class="module-top"><span class="module-index">01 / LISTEN</span><span class="module-kind">听觉辨识</span></div>
-            <div class="voice-art" aria-hidden="true"><span class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><span class="art-label">AUDIO SAMPLE · UNKNOWN</span></div>
-            <div class="module-copy"><p class="module-label">VOICE GUESS</p><h3>听声猜干员</h3><p>播放一段干员语音，凭熟悉的声线与台词找出答案。</p></div>
-            <a class="module-link" href="/voice/" aria-label="开始听声猜干员"><span>开始语音挑战</span><span aria-hidden="true">↗</span></a>
-          </article>
-          <article class="module module-clues">
-            <div class="module-top"><span class="module-index">02 / DEDUCE</span><span class="module-kind">资料推理</span></div>
-            <div class="clue-art" aria-hidden="true"><span class="file-tab">SEALED / OPERATOR DATA</span><span class="clue-line"><b>01</b><i></i><em>已解封</em></span><span class="clue-line"><b>02</b><i></i><em>待解封</em></span><span class="clue-line"><b>03</b><i></i><em>待解封</em></span><span class="clue-line"><b>04</b><i></i><em>待解封</em></span></div>
-            <div class="module-copy"><p class="module-label">SEALED DOSSIER</p><h3>线索猜干员</h3><p>逐条揭开四份线索，结合技能、天赋与特性锁定唯一答案。</p></div>
-            <a class="module-link" href="/clues/" aria-label="开始线索猜干员"><span>开始线索推理</span><span aria-hidden="true">↗</span></a>
-          </article>
+      <div class="ticker-wrap" aria-hidden="true">
+        <div class="ticker">
+          <div class="ticker-track">
+            <span>VOICE GUESS ◆ SEALED DOSSIER ◆ RHODES ISLAND ◆ OPERATOR RECOGNITION ◆&nbsp;</span>
+            <span>VOICE GUESS ◆ SEALED DOSSIER ◆ RHODES ISLAND ◆ OPERATOR RECOGNITION ◆&nbsp;</span>
+          </div>
         </div>
-      </section>
+      </div>
+
+      <nav class="entries" aria-label="考核科目入口">
+        <a class="entry entry-voice" href="/voice/">
+          <span class="entry-no">01<i>VOICE</i></span>
+          <span class="entry-main">
+            <strong>语音猜干员</strong>
+            <span class="entry-go">开始考核<span class="go-arrow" aria-hidden="true">→</span></span>
+          </span>
+          <span class="entry-thumb" aria-hidden="true"><img src="/assets/voice.webp" alt="" loading="lazy"></span>
+        </a>
+
+        <a class="entry entry-clues" href="/clues/">
+          <span class="entry-no">02<i>DOSSIER</i></span>
+          <span class="entry-main">
+            <strong>线索猜干员</strong>
+            <span class="entry-go">开始考核<span class="go-arrow" aria-hidden="true">→</span></span>
+          </span>
+          <span class="entry-thumb" aria-hidden="true"><img src="/assets/clues.webp" alt="" loading="lazy"></span>
+        </a>
+      </nav>
     </main>
-    <footer class="site-footer"><span>RHODES ISLAND / OPERATOR RECOGNITION LAB</span><span>选择模块，开始训练 <span aria-hidden="true">↗</span></span></footer>
+
+    <footer class="bottombar">
+      <span>RHODES ISLAND — OPERATOR RECOGNITION</span>
+      <span>博士，今天也拜托你了</span>
+    </footer>
   </div>
 </body>
 </html>
