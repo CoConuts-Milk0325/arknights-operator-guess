@@ -275,6 +275,39 @@ h1 em { font-style: normal; color: var(--acc); }
   color: var(--faint);
 }
 
+.footer-right {
+  display: flex;
+  align-items: baseline;
+  gap: clamp(16px, 3vw, 38px);
+}
+
+.footer-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 13px;
+  white-space: nowrap;
+}
+
+.footer-links a {
+  color: var(--muted);
+  text-decoration: underline;
+  text-decoration-color: rgba(184, 176, 160, .35);
+  text-underline-offset: 4px;
+  transition: color .2s ease, text-decoration-color .2s ease;
+}
+
+.footer-links a:hover {
+  color: var(--acc);
+  text-decoration-color: var(--acc);
+}
+
+.footer-links a + a::before {
+  content: "/";
+  margin-right: 13px;
+  color: var(--faint);
+  text-decoration: none;
+}
+
 /* ---------- 焦点 ---------- */
 
 :focus-visible {
@@ -303,6 +336,7 @@ h1 em { font-style: normal; color: var(--acc); }
   .entry { padding: 24px 4px; gap: 18px; }
   .entry-no { font-size: 30px; }
   .bottombar { flex-wrap: wrap; font-size: 10.5px; }
+  .footer-right { width: 100%; justify-content: space-between; flex-wrap: wrap; gap: 7px 18px; }
 }
 
 /* ---------- 减少动态效果 ---------- */

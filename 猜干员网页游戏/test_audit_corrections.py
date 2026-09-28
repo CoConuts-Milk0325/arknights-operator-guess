@@ -200,6 +200,89 @@ class AuditCorrectionTests(unittest.TestCase):
                 with self.subTest(fact=fact_id, operator=name):
                     self.assertIn(fact_id, self.clues(name))
 
+    def test_seven_disputed_clue_mechanisms(self):
+        lin = self.clues("林")
+        self.assertIn("combo:aoe_control:stun", lin)
+        self.assertIn("流光乍裂", lin["combo:aoe_control:stun"])
+        self.assertIn("计出万全", lin["combo:aoe_control:stun"])
+
+        roberta = self.clues("罗比菈塔")
+        for fact_id in ("self:shield", "ally:survival_nonheal", "damage:only_one",
+                        "combo:one_damage_no_control"):
+            self.assertIn(fact_id, roberta)
+
+        for name in ("小满", "但书", "伯塔尼", "凛视", "波卜"):
+            with self.subTest(operator=name):
+                self.assertNotIn("attack:arts_switch", self.clues(name))
+        self.assertIn("range:two_skills_outside", self.clues("结城理"))
+        self.assertIn("control:one", self.clues("伊内丝"))
+        self.assertIn("heal:no_direct", self.clues("伊桑"))
+
+        for name, skill_name in (("可露希尔", "模型扩展"), ("缪尔赛思", "生态耦合")):
+            with self.subTest(operator=name):
+                profile = game.make_profile(self.records[name])
+                facts = game.facts_for(profile, {profile["branch"]: {profile["rarity"]}})
+                direct = next(fact for fact in facts if fact[0] == "mechanic:deployment_cost")
+                gradual = next(fact for fact in facts if fact[0] == "skill:dp_over_time")
+                self.assertIn(skill_name, direct[4])
+                self.assertEqual(direct[2], gradual[2])
+
+    def test_range_grid_expansion_includes_thorns_second_skill(self):
+        self.assertEqual(game.range_extra_cells("3-12", "3-1"), {(1, 2), (-1, 2)})
+        for name, skills in (("棘刺", ("护身尖刺", "至高之术")),
+                             ("结城理", ("俄耳甫斯的竖琴", "塔纳托斯的囚锁", "开辟明日的剑刃"))):
+            with self.subTest(operator=name):
+                clues = self.clues(name)
+                self.assertIn("range:expand", clues)
+                self.assertIn("range:two_skills_outside", clues)
+                for skill_name in skills:
+                    self.assertIn(skill_name, clues["range:two_skills_outside"])
+        for name in ("暴雨", "古米", "塞雷娅"):
+            with self.subTest(operator=name):
+                self.assertNotIn("range:two_skills_outside", self.clues(name))
+
+    def test_every_structured_range_id_has_a_grid(self):
+        missing = set()
+        for record in self.records.values():
+            profile = game.make_profile(record)
+            for range_id in (profile["base_range_id"], *(skill["range_id"] for skill in profile["skills"])):
+                if range_id and range_id not in game.RANGE_GRIDS:
+                    missing.add(range_id)
+        self.assertEqual(missing, set())
+
+    def test_no_direct_heal_never_conflicts_with_direct_heal(self):
+        for name, record in self.records.items():
+            with self.subTest(operator=name):
+                profile = game.make_profile(record)
+                ids = {fact[0] for fact in game.facts_for(
+                    profile, {profile["branch"]: {profile["rarity"]}})}
+                self.assertFalse({"heal:no_direct", "heal:direct_other"} <= ids)
+
+    def test_disputed_original_questions_are_not_unique(self):
+        profiles = [game.make_profile(record) for record in self.records.values()]
+        profiles.sort(key=lambda profile: (profile["name"].casefold(), profile["id"]))
+        facts, _ = game.build_facts(profiles)
+        by_id = {fact["id"]: fact for fact in facts}
+        cases = {
+            "蜜蜡": ({"attack:normal_none", "profession:exact:术师", "range:expand",
+                    "combo:aoe_control:stun"}, {"蜜蜡", "林"}),
+            "砾": ({"self:shield", "ally:survival_nonheal", "combo:one_damage_no_control",
+                   "rarity:exact:4"}, {"砾", "罗比菈塔"}),
+            "司霆惊蛰": ({"range:two_skills_outside", "attack:skill_targets:4", "rarity:exact:6",
+                      "combo:skill_two_damage:arts:physical"}, {"司霆惊蛰", "结城理"}),
+            "冬时": ({"cost:maxpot:one_digit", "skill:activation:auto",
+                    "mechanic:deployment_cost", "control:one"}, {"冬时", "伊内丝"}),
+            "绮良": ({"profession:exact:特种", "attack:extra_arts", "damage:exact_two",
+                    "heal:no_direct"}, {"绮良", "伊桑"}),
+        }
+        for target, (clue_ids, expected) in cases.items():
+            with self.subTest(answer=target):
+                possible = set(range(len(profiles)))
+                for clue_id in clue_ids:
+                    fact = by_id[clue_id]
+                    possible &= set(fact.get("possibleMembers", fact["members"]))
+                self.assertEqual({profiles[index]["name"] for index in possible}, expected)
+
     def test_branch_backed_normal_air_attack(self):
         for name in ("艾雅法拉", "伊芙利特", "澄闪", "银灰", "棘刺",
                      "早露", "提丰", "黑", "鸿雪", "豆苗", "初雪",

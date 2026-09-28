@@ -19,6 +19,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "干员文字资料" / "全体干员文字资料.json"
 OUTPUT = Path(__file__).with_name("事实索引.js")
+# 与干员快照相同的 f6a8967a 提交：cn/gamedata/excel/range_table.json。
+RANGE_TABLE = json.loads(Path(__file__).with_name("攻击范围表.json").read_text(encoding="utf-8"))
+RANGE_GRIDS = {range_id: {(cell["row"], cell["col"]) for cell in info["grids"]}
+               for range_id, info in RANGE_TABLE.items()}
+CATALOG_OUTPUTS = (Path(__file__).with_name("事实索引_全线索名目.txt"),
+                   ROOT / "事实索引_全线索名目.txt")
 BRANCH_NAMES = json.loads((ROOT / "干员档案展示版" / "资料映射" / "职业分支名称.json").read_text(encoding="utf-8"))
 
 DAMAGE_NAMES = {"physical": "物理", "arts": "法术", "true": "真实", "elemental": "元素"}
@@ -223,6 +229,11 @@ AUDITED = {
     "char_422_aurora": {"skill_inherited_damage": {"人工降雪": "physical"}},
     "char_304_zebra": {"hunger_regen": "一技能增加目标的生命回复速度，可作用于绝食干员", "no_direct_heal": "技能与天赋均无直接治疗"},
     "char_1046_sbell2": {"summon_no_damage_control": True},
+    # 造型仪只给所在近战位的单位防御与护盾，也可放在罗比菈塔所在格；装置不攻击。
+    "char_484_robrta": {"summon_no_damage_control": True,
+                         "self_shield": "天赋「造型仪调试」：造型仪可作用于自身所在近战位，获得防御增益和护盾"},
+    # 三技能击倒目标时主动破碎琉璃璧，触发第一天赋的范围伤害与晕眩。
+    "char_4080_lin": {"skill_talent_aoe_stun": ("流光乍裂", "计出万全")},
 }
 
 # 逐人核对原始技能、天赋和模组后确认的错误归属。保留自动提取规则，
@@ -453,6 +464,7 @@ def make_profile(operator: dict) -> dict:
             params.setdefault("duration", level.get("时长"))
             skills.append({"id": skill.get("技能编号"), "name": clean(level.get("名称")),
                            "text": expand_skill_values(level.get("描述"), params),
+                           "range_id": level.get("攻击范围编号"),
                            "params": params, "activation": level.get("技能类型"),
                            "sp_type": (level.get("技力数据") or {}).get("技力类型"),
                            "sp_cost": (level.get("技力数据") or {}).get("技力消耗"),
@@ -471,6 +483,7 @@ def make_profile(operator: dict) -> dict:
             "archive": f"../干员档案展示版/干员档案/{operator['干员名称']}.html",
             "trait": expand_skill_values(basic.get("描述"), trait_params), "talents": talents, "skills": skills,
             "base_block": base_block,
+            "base_range_id": phases[-1].get("攻击范围编号") if phases else None,
             "modules": module_effects(operator), "cost_maxpot": max_potential_cost(basic),
             "has_summons": bool(basic.get("显示召唤物索引") or operator.get("召唤物资料"))}
 
@@ -623,6 +636,7 @@ def control_types(sources: list[tuple[str, str]]) -> set[str]:
 def ally_effect(sources: list[tuple[str, str]], terms: dict, require_multi: bool = False,
                 skills: list[dict] | None = None) -> tuple[str, str] | None:
     recipient_pattern = (r"(?:其他|其余|友方|我方).{0,28}(?:干员|单位|角色)|友军|"
+                         r"一名(?:近战|远程)位上的单位|"
                          r"(?:所有|全体|全场|场上|在场(?!时)|多名|周围|附近|范围内|自己身后|前方|身前).{0,30}"
                          r"(?:干员|友方单位|我方单位|友军|角色)|【[^】]+】干员|"
                          r"(?:Ave Mujica|颂乐人偶)成员|"
@@ -891,6 +905,18 @@ def explicit_skill_fact(skills: list[dict], pattern: str) -> tuple[str, str] | N
     return None
 
 
+def direct_dp_skill(skills: list[dict]) -> tuple[str, str] | None:
+    """逐渐/持续回费的总额不能充当即时获得费用的证据。"""
+    pattern = r"(?:获得|回复)\d+点(?:部署)?费用"
+    for skill in skills:
+        for match in re.finditer(pattern, skill["text"]):
+            clause = re.split(r"[，,；;。]", skill["text"][:match.start()])[-1]
+            if re.search(r"逐渐|每秒|持续时间内|技能持续期间|一段时间内", clause):
+                continue
+            return skill["name"], skill["text"]
+    return None
+
+
 def all_allies_life_heal(text: str) -> bool:
     """将全员生命治疗与全员元素损伤回复、减伤分开。"""
     for clause in re.split(r"[；;。\n]", text):
@@ -1003,6 +1029,55 @@ def own_attack_range_expansion(skills: list[dict]) -> tuple[str, str] | None:
             clause_before = re.split(r"[，；。]", skill["text"][:match.start()])[-1]
             if not other_actor.search(clause_before):
                 return skill["name"], skill["text"]
+    return None
+
+
+RANGE_OUTSIDE_TEXT = re.compile(
+    r"(?:范围外|原本范围以外|攻击范围改为.*无限|"
+    r"攻击(?:范围|距离)(?:(?:更|更加|大幅)?(?:扩大|增大|增加|加长|延伸)|"
+    r"(?:向|朝)[^，；。]{1,8}(?:扩大|延伸)|"
+    r"与[^，；。]{1,8}范围(?:扩大|增加|延伸)|"
+    r"[+＋]\s*(?:\{[a-zA-Z0-9_\.@]+\}|\d+)(?:格)?)|"
+    r"(?:扩大|增大|增加|延伸)(?:自身|自己的)?攻击(?:范围|距离))"
+)
+
+
+def range_extra_cells(base_id: str | None, skill_id: str | None) -> set[tuple[int, int]]:
+    """比较真实格子集合；不同 RangeId 不一定意味着攻击范围扩大。"""
+    if not base_id or not skill_id or base_id not in RANGE_GRIDS or skill_id not in RANGE_GRIDS:
+        return set()
+    return RANGE_GRIDS[skill_id] - RANGE_GRIDS[base_id]
+
+
+def outside_attack_status(profile: dict, skill: dict) -> bool | None:
+    """True 为能打原范围外；None 为范围扩大但短描述不能确认攻击对象。"""
+    text = skill["text"]
+    if not range_extra_cells(profile["base_range_id"], skill["range_id"]) and not RANGE_OUTSIDE_TEXT.search(text):
+        return False
+    # RangeId 也用于治疗、支援和装置范围，必须另有对敌攻击证据。
+    enemy_hit = bool(re.search(
+        r"对[^，；。]{0,40}(?:敌人|敌方|敌军|目标)[^，；。]{0,45}"
+        r"(?:造成[^，；。]{0,35}伤害|进行[^，；。]{0,12}攻击|发动[^，；。]{0,12}斩击)|"
+        r"对(?:前方|周围|附近)[^，；。]{0,20}(?:造成[^，；。]{0,35}伤害|进行[^，；。]{0,12}攻击)|"
+        r"对其发动[^，；。]{0,20}(?:攻击|斩击)|攻击造成[^，；。]{0,50}伤害",
+        text))
+    if enemy_hit:
+        return True
+    # 只攻击已阻挡敌人不因技能的状态作用范围扩大而获得范围外选敌。
+    if re.search(r"攻击(?:自身)?阻挡的所有敌人", text):
+        return False
+    if (profile["branch"] in HEALING_ATTACK_BRANCHES
+            or re.search(r"(?:下次|下一次)攻击.{0,20}(?:恢复|回复|治疗|友方)|"
+                         r"(?:停止攻击|专心).{0,40}(?:治疗|恢复)|"
+                         r"(?:所有|周围|附近).{0,20}(?:友方|我方|机械水獭).{0,35}(?:获得|治疗|恢复)", text)):
+        return False
+    # 本体停攻时，驭械术师的浮游单元仍可在明示扩大的范围内索敌。
+    if "停止攻击" in text:
+        if re.search(r"释放浮游单元锁定敌人攻击", text) and RANGE_OUTSIDE_TEXT.search(text):
+            return True
+        return False
+    if own_attack_range_expansion([skill]):
+        return True
     return None
 
 
@@ -1408,11 +1483,11 @@ def facts_for(profile: dict, branch_rarities: dict[str, set[int]]) -> list[tuple
         code = next(iter(all_damage))
         add(f"damage:only:{code}", "伤害", "damage", f"只能造成{DAMAGE_NAMES[code]}伤害",
             f"普通攻击、技能、天赋和所有模组配置均已盘点：仅有{DAMAGE_NAMES[code]}伤害")
-    has_move_speed_debuff = any(re.search(r"(?:敌人|敌方|敌军|目标|使其|令其).{0,45}移动速度(?:-|下降|降低|减少)", phrase) for _, phrase in all_sources)
-    control_complete = summon_damage_control_complete and "elemental" not in all_damage and not has_move_speed_debuff
+    # 移速数值削弱属于 debuff:move_speed，不增加或阻断异常状态/位移的控制计数。
+    control_complete = summon_damage_control_complete and "elemental" not in all_damage
     if not all_control and control_complete:
-        add("control:none", "控制", "control", "没有任何控制效果",
-            "普通攻击、全部技能、天赋和专属模组中未发现对敌方施加异常状态、减速或位移")
+        add("control:none", "控制", "control", "没有异常状态或位移控制",
+            "普通攻击、全部技能、天赋和专属模组中未发现对敌方施加异常状态或位移；移速数值削弱另计")
     elif len(all_control) == 1 and control_complete:
         label = next(iter(all_control))
         add("control:one", "控制", "control", "具备一种类型的控制效果",
@@ -1467,10 +1542,22 @@ def facts_for(profile: dict, branch_rarities: dict[str, set[int]]) -> list[tuple
                 add(f"combo:aoe_control:{control_code}", "复合", "aoe_control",
                     f"有技能兼具真群攻与{CONTROL_NAMES[control_code][0]}控制",
                     f"同一技能「{skill['name']}」（最高等级）：{compact(skill['text'])}")
+    linked = audited.get("skill_talent_aoe_stun")
+    if linked:
+        linked_skill = next((s for s in profile["skills"] if s["name"] == linked[0]
+                             and "琉璃璧破碎" in s["text"]), None)
+        linked_talent = next((phrase for name, phrase in profile["talents"] if name == linked[1]
+                              and true_aoe([("天赋", phrase)])
+                              and "晕眩" in phrase), None)
+        if linked_skill and linked_talent:
+            add("combo:aoe_control:stun", "复合", "aoe_control",
+                "有技能兼具真群攻与晕眩控制",
+                f"技能「{linked_skill['name']}」：{compact(linked_skill['text'])}；"
+                f"触发天赋「{linked[1]}」：{compact(linked_talent)}")
     if len(all_damage) == 1 and not all_control and control_complete:
         add("combo:one_damage_no_control", "复合", "damage_control_combo",
-            "仅能造成一种类型的伤害，且没有控制效果",
-            f"所有技能及模组配置均只产生{DAMAGE_NAMES[next(iter(all_damage))]}伤害，无控制效果")
+            "仅能造成一种类型的伤害，且没有异常状态或位移控制",
+            f"所有技能及模组配置均只产生{DAMAGE_NAMES[next(iter(all_damage))]}伤害，无异常状态或位移控制")
     if len(all_damage) == 2 and len(all_control) == 1 and control_complete:
         damage_labels = "、".join(DAMAGE_NAMES[code] for code in sorted(all_damage))
         control_label = CONTROL_NAMES[next(iter(all_control))][0]
@@ -1515,8 +1602,16 @@ def facts_for(profile: dict, branch_rarities: dict[str, set[int]]) -> list[tuple
     if has_summons:
         add("summon:has", "召唤", "summon", "战斗能力中包含召唤物",
             "本地档案的召唤物索引非空；其效果按干员自身能力统计")
+    grid_expanded = next((s for s in profile["skills"]
+                          if range_extra_cells(profile["base_range_id"], s["range_id"])
+                          and outside_attack_status(profile, s) is True), None)
     expanded = own_attack_range_expansion(profile["skills"])
-    if expanded:
+    if grid_expanded:
+        extra = range_extra_cells(profile["base_range_id"], grid_expanded["range_id"])
+        add("range:expand", "范围", "range_expand", "有技能能扩大自身的攻击范围",
+            f"技能「{grid_expanded['name']}」：攻击范围 {profile['base_range_id']} → "
+            f"{grid_expanded['range_id']}，新增{len(extra)}格；{compact(grid_expanded['text'], 85)}")
+    elif expanded:
         add("range:expand", "范围", "range_expand", "有技能能扩大自身的攻击范围",
             f"技能「{expanded[0]}」：{compact(expanded[1])}")
     block_change = self_block_change_skill(profile["skills"])
@@ -1531,7 +1626,6 @@ def facts_for(profile: dict, branch_rarities: dict[str, set[int]]) -> list[tuple
         ("permanent", "skill_duration", "技能", "有技能启动后持续时间无限", r"持续时间无限"),
         ("next_attack", "skill_trigger", "技能", "有技能强化下一次攻击",
          r"(?:下次|下一次)(?:的)?攻击(?:.{0,55}(?:攻击力|伤害|连击|攻击两次|攻击三次)|力(?:提升|提高|变为|增加))"),
-        ("deployment_cost", "skill_dp", "技能", "有技能可以直接获得部署费用", r"(?:获得|回复)\d+点(?:部署)?费用"),
         ("overload", "skill_overload", "技能", "有技能具有过载效果", r"过载[:：]"),
         ("shorter_interval", "skill_attack_interval", "技能", "有技能能缩短自身攻击间隔",
          r"(?:^|[，,；;:：]|且|随后)(?:自身|自己的)?攻击间隔(?:超大幅度|极大幅度|较大幅度|较小幅度|大幅度|小幅度|超大幅|极大幅|较大幅|大幅|小幅|略微|稍微|一定程度)?(?:缩短|减小|降低)"),
@@ -1542,12 +1636,17 @@ def facts_for(profile: dict, branch_rarities: dict[str, set[int]]) -> list[tuple
         if found:
             add(f"mechanic:{code}", family, topic, sentence,
                 f"技能「{found[0]}」（最高等级）：{compact(found[1])}")
+    direct_dp = direct_dp_skill(profile["skills"])
+    if direct_dp:
+        add("mechanic:deployment_cost", "技能", "skill_dp", "有技能可以直接获得部署费用",
+            f"技能「{direct_dp[0]}」（最高等级）：{compact(direct_dp[1])}")
     self_loss = self_hp_loss_skill(profile["skills"])
     if self_loss:
         add("mechanic:self_hp_loss", "生存", "skill_hp", "有技能会使自身流失生命",
             f"技能「{self_loss[0]}」（最高等级）：{compact(self_loss[1])}")
     for key, family, topic, sentence, pattern in SKILL_TEXT_FACTS:
-        if key == "attack:arts_switch" and profile["profession"] == "术师":
+        if key == "attack:arts_switch" and (profile["profession"] == "术师"
+                or re.search(r"^(?:普通)?攻击造成(?:群体)?法术伤害", trait)):
             continue
         found = explicit_skill_fact(profile["skills"], pattern)
         if key == "heal:all_allies" and found and not all_allies_life_heal(found[1]):
@@ -1584,7 +1683,7 @@ def facts_for(profile: dict, branch_rarities: dict[str, set[int]]) -> list[tuple
          r"(?:每次攻击|每一击|攻击时|攻击).{0,35}附(?:加|带)(?:相当于)?攻击力\d+%的法术伤害"),
         ("skill:allied_skill_trigger", "支援", "ally_skill", "技能可以使同阵营其他干员立即发动已就绪的技能",
          r"立刻使技能就绪的【[^】]+】干员同时开启技能"),
-        ("skill:dp_over_time", "技能", "skill_dp_timing", "有技能会在持续期间逐渐获得部署费用",
+        ("skill:dp_over_time", "技能", "skill_dp", "有技能会在持续期间逐渐获得部署费用",
          r"(?:技能持续期间|持续时间内|一段时间内)(?:内)?(?:共|总共)?(?:获得|回复)(?:总共|共)?\d+点(?:部署)?费用|(?:期间)?逐渐(?:获得|回复)\d+点(?:部署)?费用|每秒(?:获得|回复)\d+点(?:部署)?费用"),
     ):
         found = explicit_skill_fact(profile["skills"], pattern)
@@ -1695,6 +1794,9 @@ def facts_for(profile: dict, branch_rarities: dict[str, set[int]]) -> list[tuple
     if shield:
         add("self:shield", "生存", "self_shield", "自身可以获得护盾或屏障",
             f"{shield[0]}：{compact(shield[1])}")
+    elif audited.get("self_shield"):
+        add("self:shield", "生存", "self_shield", "自身可以获得护盾或屏障",
+            audited["self_shield"])
     regen = self_regen_source(all_sources)
     if regen:
         add("self:regen", "生存", "self_regen", "自身可以持续回复生命值",
@@ -1744,7 +1846,7 @@ def facts_for(profile: dict, branch_rarities: dict[str, set[int]]) -> list[tuple
                          if re.search(r"(?:恢复|回复|治疗).{0,20}(?:友方|我方|其他).{0,18}(?:干员|单位).{0,18}生命|"
                                       r"(?:友方|我方|其他).{0,18}(?:干员|单位).{0,25}(?:恢复|回复|治疗).{0,20}生命", phrase)
                          and not re.search(r"(?:每秒|生命回复速度|持续恢复).{0,20}生命", phrase)), None)
-    if ((regen or audited.get("hunger_regen")) and not direct_other and not direct_heal(all_sources) and not has_summons) or audited.get("no_direct_heal"):
+    if (not direct_other and not direct_heal(all_sources) and not has_summons) or audited.get("no_direct_heal"):
         add("heal:no_direct", "恢复", "direct_heal", "没有直接治疗其他干员的能力",
             audited.get("no_direct_heal") or "技能、天赋及模组未发现直接治疗；生命回复速度另计")
     if direct_other:
@@ -1770,17 +1872,14 @@ def facts_for(profile: dict, branch_rarities: dict[str, set[int]]) -> list[tuple
         add("heal:elemental_loss", "恢复", "elemental_heal", "可以为友方回复元素损伤",
             f"{elemental_heal[0]}：{compact(elemental_heal[1])}")
 
-    outside = [s for s in profile["skills"] if re.search(
-        r"(?:范围外|原本范围以外|攻击范围改为.*无限|"
-        r"攻击(?:范围|距离)(?:(?:更|更加|大幅)?(?:扩大|增大|增加|加长|延伸)|"
-        r"(?:向|朝)[^，；。]{1,8}(?:扩大|延伸)|"
-        r"与[^，；。]{1,8}范围(?:扩大|增加|延伸)|"
-        r"[+＋]\s*(?:\{[a-zA-Z0-9_\.@]+\}|\d+)(?:格)?)|"
-        r"(?:扩大|增大|增加|延伸)(?:自身|自己的)?攻击(?:范围|距离))",
-        s["text"])]
+    outside = [s for s in profile["skills"] if outside_attack_status(profile, s) is True]
     if len(outside) >= 2:
-        add("range:two_skills_outside", "范围", "range_outside", "不止一个技能可以攻击原本攻击范围外的敌人",
-            "、".join(f"{s['name']}：{compact(s['text'], 60)}" for s in outside))
+        add("range:two_skills_outside", "范围", "range_expand", "不止一个技能可以攻击原本攻击范围外的敌人",
+            "、".join(f"{s['name']}：{compact(s['text'], 60)}"
+                     + (f"（范围 {profile['base_range_id']} → {s['range_id']}，新增"
+                        f"{len(range_extra_cells(profile['base_range_id'], s['range_id']))}格）"
+                        if range_extra_cells(profile["base_range_id"], s["range_id"]) else "")
+                     for s in outside))
     talent_shrink = next((f"天赋「{name}」：{compact(phrase)}" for name, phrase in profile["talents"]
                           if re.search(r"技能开启时.{0,25}攻击范围缩小", phrase)), None)
     shrink_cond = (audited.get("range_shrink") or talent_shrink
@@ -1833,6 +1932,8 @@ def implied_fact_ids(key: str) -> list[str]:
         implied.update(("damage:exact_two", "control:one"))
     elif key == "combo:outside_and_shrink":
         implied.update(("range:two_skills_outside", "range:can_shrink"))
+    elif key == "range:two_skills_outside":
+        implied.add("range:expand")
     elif len(parts) == 4 and parts[:2] == ["skill", "activation_sp"]:
         implied.update((f"skill:activation:{parts[2]}", f"skill:sp:{parts[3]}"))
     elif len(parts) == 4 and parts[:2] == ["skill", "two_sp"]:
@@ -1923,6 +2024,12 @@ def build_facts(profiles: list[dict]) -> tuple[list[dict], list[list[int]]]:
                         if any(re.search(r"(?:下次|下一次).{0,6}攻击", skill["text"])
                                for skill in profile["skills"])}
             fact["possibleMembers"] = sorted(set(fact["members"]) | possible)
+        elif fact["id"] == "range:two_skills_outside":
+            # 网格变化有时只描述治疗、装置或状态范围；无法确认攻击对象时保留为候选。
+            possible = {index for index, profile in enumerate(profiles)
+                        if sum(outside_attack_status(profile, skill) is not False
+                               for skill in profile["skills"]) >= 2}
+            fact["possibleMembers"] = sorted(set(fact["members"]) | possible)
         elif fact["id"] == "block:skill_change":
             # 友方群体或装置前方干员是否包含施放者，不能只由短描述判定。
             possible = {index for index, profile in enumerate(profiles)
@@ -2007,6 +2114,40 @@ def find_round(candidates: list[int], facts: list[dict], masks: list[int], count
     return None
 
 
+def write_catalog(profiles: list[dict], facts: list[dict]) -> None:
+    """从发布事实生成完整目录，避免手工名目与索引版本脱节。"""
+    by_family = defaultdict(list)
+    for fact in facts:
+        by_family[fact["family"]].append(fact)
+    lines = ["明日方舟「猜干员」事实索引全线索名目",
+             f"干员：{len(profiles)} 人；事实：{len(facts)} 条；分类：{len(by_family)} 种",
+             "由 生成游戏数据.py 根据 事实索引.js 同一批事实自动生成。",
+             "满足干员列出确认成员；唯一性校验还会考虑 possibleMembers 中的待核对成员。", ""]
+    order = ("目标", "攻击", "阻挡", "范围", "伤害", "控制", "复合", "削弱", "恢复",
+             "生存", "支援", "召唤", "部署", "天赋", "技能", "数值", "统计")
+    number = 0
+    for family in order:
+        entries = by_family.get(family, [])
+        if not entries:
+            continue
+        lines.extend((f"{family}（{len(entries)} 条）", "=" * 60))
+        for fact in entries:
+            number += 1
+            lines.append(f"[{number:03d}] {fact['text']}")
+            lines.append(f"ID：{fact['id']}　主题：{fact['topic']}　满足：{len(fact['members'])} 人")
+            if fact.get("implies"):
+                lines.append("已包含：" + "、".join(fact["implies"]))
+            names = fact["memberNames"]
+            for start in range(0, len(names), 12):
+                lines.append(("干员：" if start == 0 else "　　　")
+                             + "、".join(names[start:start + 12]))
+            lines.append("")
+        lines.append("")
+    catalog = "\n".join(lines).rstrip() + "\n"
+    for path in CATALOG_OUTPUTS:
+        path.write_text(catalog, encoding="utf-8")
+
+
 def main() -> None:
     raw = SOURCE.read_bytes()
     data = json.loads(raw)
@@ -2038,7 +2179,7 @@ def main() -> None:
         missing = "、".join(profile["name"] for index, profile in enumerate(profiles) if index not in fallback)
         raise ValueError(f"有干员无法组成唯一的四线索题目，拒绝发布不完整答案池：{missing}")
     released = {
-        "version": f"{data['资料说明'].get('来源提交') or 'local'}:{hashlib.sha256(raw).hexdigest()[:12]}:semantic-43",
+        "version": f"{data['资料说明'].get('来源提交') or 'local'}:{hashlib.sha256(raw).hexdigest()[:12]}:semantic-45",
         "operators": [{key: item[key] for key in ("id", "name", "profession", "rarity", "archive")} for item in profiles],
         "facts": facts, "byOperator": by_operator, "fallback": fallback,
     }
@@ -2051,6 +2192,7 @@ def main() -> None:
     header += "".join(f"// {fact['id']}｜{fact['text']}｜{len(fact['members'])} 人\n" for fact in facts)
     OUTPUT.write_text(header + "window.GUESS_DATA = " + json.dumps(released, ensure_ascii=False, indent=2) + ";\n",
                       encoding="utf-8")
+    write_catalog(profiles, facts)
     print(f"候选干员：{len(profiles)}；机制事实：{len(facts)}；可出题答案：{len(fallback)}")
 
 
