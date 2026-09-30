@@ -34,7 +34,6 @@
 !/干员档案展示版/干员档案/*.html
 !/干员档案展示版/非干员档案/
 !/干员档案展示版/非干员档案/*.html
-!/.gitmodules
 !/portal/
 !/portal/index.html
 !/portal/style.css
@@ -42,3 +41,21 @@
 !/portal/assets/
 !/portal/assets/voice.webp
 !/portal/assets/clues.webp
+
+# 双游戏统一维护：语音目录是普通源码，不再是子模块
+!/voice-guess-arknights/**
+!/package.json
+!/package-lock.json
+!/docs/
+!/docs/**
+
+# 本地配置、依赖、缓存和构建产物不提交
+**/node_modules/
+**/dist/
+**/.audio-cache/
+**/.bwiki-cache/
+**/.wrangler/
+**/.env
+**/.env.*
+**/*.local
+**/vite.config.js.timestamp-*.mjs

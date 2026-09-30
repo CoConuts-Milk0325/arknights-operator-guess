@@ -1,0 +1,17 @@
+{
+  "name": "arknights-operator-games",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "npm run build && npm run preview",
+    "preview": "npm --prefix voice-guess-arknights run preview -- --outDir ../dist --base=/ --host 127.0.0.1",
+    "dev:voice": "npm --prefix voice-guess-arknights run dev",
+    "test": "npm --prefix voice-guess-arknights test && node --test \"猜干员网页游戏/rarity-filter.test.mjs\"",
+    "verify:data": "npm --prefix voice-guess-arknights run verify:data"
+  }
+}

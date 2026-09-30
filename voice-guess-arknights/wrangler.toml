@@ -1,0 +1,3 @@
+name = "voice-guess-arknights"
+main = "cf-worker.js"
+compatibility_date = "2025-04-01"

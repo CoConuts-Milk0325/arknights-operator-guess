@@ -3,7 +3,7 @@
 此仓库构建并发布到 [coconutsmilk.top](https://coconutsmilk.top/)。
 
 - `/`：双游戏首页
-- `/voice/`：[voice-guess-arknights](https://github.com/CoConuts-Milk0325/voice-guess-arknights) 语音猜干员
+- `/voice/`：[voice-guess-arknights](voice-guess-arknights/) 语音猜干员
 - `/clues/`：本仓库的四线索猜干员
 - `/干员档案展示版/`：线索游戏引用的干员档案
 
@@ -11,7 +11,27 @@
 两款游戏均支持干员名字、外号、无声调全拼与拼音首字母检索（外号也可输入拼音）。外号以[名字与外号对应表](明日方舟干员名字与外号对应表.md)为准；修改后运行 `node 生成干员搜索索引.mjs` 更新两款游戏的检索数据，站点构建时也会自动同步。共用外号会显示多个候选，完整本名优先。
 网站的“说明文档”页由该文件生成；修改规则后运行 `node 猜干员网页游戏/生成规则页.mjs`，站点构建时也会自动更新该页面。
 
-语音项目通过 Git 子模块固定到一个提交；更新其内容时，先更新子模块指针并提交本仓库。克隆后运行 `git submodule update --init --recursive`。
+## 单仓库维护
+
+两款游戏现在都由本仓库直接管理，语音源码位于 `voice-guess-arknights/` 普通目录。无需初始化子模块，也无需再向独立语音仓库提交。
+
+使用 Node.js 24，在项目根目录运行：
+
+```powershell
+npm run dev
+```
+
+该命令安装语音依赖、构建整个站点并启动预览，默认地址为 http://127.0.0.1:4173/。首页可进入语音和线索玩法。修改源码后重新构建；预览服务读取根目录的统一 `dist/`。
+
+| 命令 | 用途 |
+|---|---|
+| `npm run build` | 安装语音依赖并构建两款游戏、首页及档案 |
+| `npm run preview` | 预览已构建的完整站点 |
+| `npm run dev:voice` | 仅语音玩法热更新开发，需先执行完整构建安装依赖及生成共享索引 |
+| `npm test` | 语音回归、共享搜索和线索星级筛选测试，需先执行完整构建 |
+| `npm run verify:data` | 校验语音名册、分片和索引，需先执行完整构建 |
+
+检索外号继续统一编辑根目录的名字与外号对应表，再运行 `npm run build`。所有代码修改向此仓库提交。历史合并及备份说明见 [合并记录](docs/2026-09-30-项目合并.md)。
 
 ## Cloudflare Pages
 

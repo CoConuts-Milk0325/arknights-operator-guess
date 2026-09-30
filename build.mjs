@@ -14,7 +14,7 @@ const archive = join(root, '干员档案展示版');
 try {
   await readFile(join(voice, 'package.json'));
 } catch {
-  throw new Error('语音游戏子模块未初始化，请先运行 git submodule update --init --recursive');
+  throw new Error('语音游戏源码缺失，请检查 voice-guess-arknights/package.json；本项目不再使用 Git 子模块');
 }
 
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
