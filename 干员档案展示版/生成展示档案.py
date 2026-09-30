@@ -1027,24 +1027,10 @@ def 提取检索栏目(正文: str, 标题: str) -> str:
     return " ".join(内容.split())
 
 
-def 建立干员检索内容(干员: dict[str, object], 正文: str, 干员名: str) -> list[str]:
+def 建立干员检索内容(正文: str) -> list[str]:
     技能 = 提取检索栏目(正文, "技能")
     天赋 = 提取检索栏目(正文, "天赋")
-    档案 = " ".join(项 for 项 in [提取检索栏目(正文, "干员档案"), 提取检索栏目(正文, "个人记录")] if 项)
-    台词: list[str] = []
-    for 字段 in ("语音台词", "追加语音台词"):
-        for 条目 in 干员.get(字段, []) or []:
-            if isinstance(条目, dict):
-                文本 = 清理富文本(条目.get("语音台词", ""), 干员名=干员名)
-                if 文本:
-                    台词.append(文本)
-    for 语种索引 in 干员语音索引.values():
-        for 编号 in 干员.get("形态资料", {}):
-            for _, 原文, _ in 语种索引.get(编号, []):
-                文本 = 清理富文本(原文, 干员名=干员名)
-                if 文本:
-                    台词.append(文本)
-    return [技能, " ".join(台词), 档案, 天赋]
+    return [技能, 天赋]
 
 
 def 生成首页(干员条目: list[dict[str, str]], 非干员条目: list[dict[str, str]], 统计: dict[str, int]) -> str:
@@ -1059,7 +1045,7 @@ def 生成首页(干员条目: list[dict[str, str]], 非干员条目: list[dict[
         卡片 = []
         for 条目 in 条目组:
             href = quote("干员档案/" + 条目["文件"], safe="/")
-            搜索词 = " ".join([条目["名称"], 条目.get("职业", ""), 条目.get("星级", ""), 条目.get("标签", "")])
+            搜索词 = 条目["名称"]
             卡片.append(f"<a class='干员条目' data-search='{转义(搜索词).lower()}' data-key='{转义('干员档案/' + 条目['文件'])}' href='{转义(href)}'><span class='干员名'>{转义(条目['名称'])}</span><span class='干员副题'>{转义(条目.get('星级', ''))} · {转义(职业)}</span><span class='匹配提示' hidden></span></a>")
         列表.append(f"<section class='职业组'><h2>{转义(职业)}<span>{len(条目组)} 名</span></h2><div class='干员网格'>{''.join(卡片)}</div></section>")
     非干员HTML = ""
@@ -1092,7 +1078,7 @@ def 生成首页(干员条目: list[dict[str, str]], 非干员条目: list[dict[
       <p>按玩家可读栏目整理干员资料。档案、台词、剧情和专名保留中文服源文；属性标签使用玩家熟悉的展示用语。</p>
       <div class="索引统计"><strong>{len(干员条目)}</strong><span>名干员</span><i></i><strong>{len(非干员条目)}</strong><span>份人物档案</span></div>
       <div class="索引补充统计">收录 {统计['语音条数']:,} 条台词、{统计['追加语音条数']:,} 条追加台词、{统计['个人记录篇数']:,} 篇个人记录</div>
-      <label class="检索框"><span>检索干员</span><input id="档案检索" type="search" placeholder="输入代号、技能、台词、档案或天赋关键词" autocomplete="off"><span id="检索结果" aria-live="polite">{len(干员条目) + len(非干员条目)} 条档案</span></label>
+      <label class="检索框"><span>检索干员</span><input id="档案检索" type="search" placeholder="输入名字、技能或天赋关键词" autocomplete="off"><span id="检索结果" aria-live="polite">{len(干员条目) + len(非干员条目)} 条档案</span></label>
     </section>
     <div id="档案列表">{''.join(列表)}{非干员HTML}</div>
     <footer class="页脚"><span>离线静态资料 · 无需网络</span><a href="使用说明.md">打开使用说明</a></footer>
@@ -1179,7 +1165,7 @@ def 主程序() -> None:
         写入网页(干员页目录 / f"{文件名}.html", 干员名, 网页正文, "../档案样式.css", "../首页.html", 干员名)
         (Markdown目录 / f"{Markdown名}.md").write_text(Markdown正文 + "\n", encoding="utf-8")
         干员清单.append({**元信息, "文件": f"{文件名}.html"})
-        检索索引[f"干员档案/{文件名}.html"] = 建立干员检索内容(干员, Markdown正文, 干员名)
+        检索索引[f"干员档案/{文件名}.html"] = 建立干员检索内容(Markdown正文)
 
     非干员清单: list[dict[str, str]] = []
     非干员已用: Counter[str] = Counter()
@@ -1193,7 +1179,7 @@ def 主程序() -> None:
         写入网页(非干员页目录 / f"{文件名}.html", 展示名, 网页正文, "../档案样式.css", "../首页.html", 展示名)
         (Markdown目录 / f"非干员档案_{文件名}.md").write_text(Markdown正文 + "\n", encoding="utf-8")
         非干员清单.append({"名称": 展示名, "文件": f"{文件名}.html"})
-        检索索引[f"非干员档案/{文件名}.html"] = ["", "", " ".join(Markdown正文.split()), ""]
+        检索索引[f"非干员档案/{文件名}.html"] = ["", ""]
 
     统计 = {
         "语音条数": sum(len(干员.get("语音台词", []) or []) for 干员 in 数据.get("干员", {}).values()),

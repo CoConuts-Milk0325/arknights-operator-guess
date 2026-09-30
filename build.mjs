@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateRulePage } from './猜干员网页游戏/生成规则页.mjs';
+import { generateOperatorSearchIndex } from './生成干员搜索索引.mjs';
 
 const root = dirname(fileURLToPath(import.meta.url));
 const output = join(root, 'dist');
@@ -17,9 +18,9 @@ try {
 }
 
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-for (const args of [['ci'], ['run', 'build', '--', '--base=/voice/']]) {
-  execFileSync(npm, args, { cwd: voice, stdio: 'inherit', shell: process.platform === 'win32' });
-}
+execFileSync(npm, ['ci'], { cwd: voice, stdio: 'inherit', shell: process.platform === 'win32' });
+await generateOperatorSearchIndex();
+execFileSync(npm, ['run', 'build', '--', '--base=/voice/'], { cwd: voice, stdio: 'inherit', shell: process.platform === 'win32' });
 
 await rm(output, { recursive: true, force: true });
 await mkdir(join(output, 'clues'), { recursive: true });
@@ -30,7 +31,7 @@ await cp(join(root, 'portal', 'style.css'), join(output, 'style.css'));
 await cp(join(root, 'portal', 'assets'), join(output, 'assets'), { recursive: true });
 
 await generateRulePage(game);
-for (const name of ['游戏样式.css', '游戏逻辑.js', '事实索引.js', '规则说明.css', '规则说明.html', '机制核对记录.md', '事实索引与游戏数据修改报告.md']) {
+for (const name of ['游戏样式.css', '游戏逻辑.js', '事实索引.js', '干员搜索索引.js', '规则说明.css', '规则说明.html', '机制核对记录.md', '事实索引与游戏数据修改报告.md']) {
   await cp(join(game, name), join(output, 'clues', name));
 }
 const clueHtml = (await readFile(join(game, '首页.html'), 'utf8'))

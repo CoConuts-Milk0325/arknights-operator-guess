@@ -27,7 +27,7 @@ class AuditCorrectionTests(unittest.TestCase):
             "heal:hunger": ("绮良", "塞雷娅"),
             "heal:attack_self": ("伺夜",),
             "mechanic:stop_attack": ("渡桥",),
-            "target:elite_first": ("酒神",),
+            "target:high_def_first": ("丰川祥子",),
             "attack:5_hits": ("纯烬艾雅法拉",),
             "debuff:fragile": ("石英",),
             "control:one": ("可颂",),
@@ -65,7 +65,7 @@ class AuditCorrectionTests(unittest.TestCase):
             "attack:splash": ("奥达",),
             "range:can_shrink": ("特米米",),
             "target:blocked_first": ("和弦", "歌蕾蒂娅"),
-            "target:elite_first": ("黑键",),
+            "target:elite_first": ("黑键", "酒神"),
             "skill:passive_active": ("令", "结城理", "赫德雷", "乌有"),
             "skill:redeploy_reduction": ("莱伊",),
             "skill:refresh": ("史尔特尔",),
@@ -192,7 +192,7 @@ class AuditCorrectionTests(unittest.TestCase):
             "attack:three_hits": ("鸿雪",),
             "attack:extra_arts": ("苇草",),
             "ally:prevent_death": ("缇缇", "丰川祥子", "斩业星熊"),
-            "target:high_def_first": ("丰川祥子",),
+            "target:high_def_first": ("史都华德", "刻俄柏"),
             "range:two_skills_outside": ("澄闪", "莱伊", "逻各斯", "玛恩纳"),
         }
         for fact_id, names in expected.items():
@@ -407,6 +407,24 @@ class AuditCorrectionTests(unittest.TestCase):
         general = by_id["attack:extra_arts"]
         self.assertLessEqual(set(specific["members"]), set(general["members"]))
         self.assertIn("attack:extra_arts", specific.get("implies", []))
+
+    def test_round_16_fixes(self):
+        for name in ("锡兰", "絮雨", "诺威尔"):
+            self.assertIn("heal:direct_other", self.clues(name))
+            self.assertNotIn("heal:no_direct", self.clues(name))
+
+        for name in ("弑君者", "红", "杰西卡", "猎蜂"):
+            self.assertIn("survival:physical_dodge", self.clues(name))
+
+        for name in ("寻澜", "晓歌", "齐尔查克"):
+            self.assertNotIn("mechanic:deployment_cost", self.clues(name))
+
+        for name in ("黑键", "薇薇安娜", "酒神"):
+            self.assertIn("target:elite_first", self.clues(name))
+
+        self.assertIn("target:high_def_first", self.clues("史都华德"))
+        self.assertIn("target:high_def_first", self.clues("刻俄柏"))
+        self.assertNotIn("target:high_def_first", self.clues("丰川祥子"))
 
 
 if __name__ == "__main__":

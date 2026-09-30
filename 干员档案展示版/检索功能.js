@@ -1,16 +1,18 @@
 const 检索框 = document.getElementById("档案检索");
 const 结果文字 = document.getElementById("检索结果");
+检索框.placeholder = "输入名字、技能或天赋关键词";
 const 条目 = [...document.querySelectorAll(".干员条目")];
-const 栏目名称 = ["技能", "台词", "档案", "天赋"];
+const 栏目名称 = ["技能", "天赋"];
 const 内容索引 = window.档案检索索引 || {};
 const 预处理索引 = new Map();
 
 for (const 卡片 of 条目) {
-  const 原文 = 内容索引[卡片.dataset.key] || ["", "", "", ""];
+  const 记录 = 内容索引[卡片.dataset.key] || [];
+  const 原文 = 记录.length >= 4 ? [记录[0], 记录[3]] : [记录[0] || "", 记录[1] || ""];
   预处理索引.set(卡片, {
     原文,
     小写: 原文.map((文本) => 文本.toLocaleLowerCase()),
-    名称: 卡片.dataset.search || "",
+    名称: 卡片.querySelector(".干员名").textContent.toLocaleLowerCase(),
   });
 }
 

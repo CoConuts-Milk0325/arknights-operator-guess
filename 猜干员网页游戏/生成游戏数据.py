@@ -27,6 +27,49 @@ CATALOG_OUTPUTS = (Path(__file__).with_name("事实索引_全线索名目.txt"),
                    ROOT / "事实索引_全线索名目.txt")
 BRANCH_NAMES = json.loads((ROOT / "干员档案展示版" / "资料映射" / "职业分支名称.json").read_text(encoding="utf-8"))
 
+PINYIN_MAP_FILE = Path(__file__).with_name("干员拼音映射.json")
+if PINYIN_MAP_FILE.exists():
+    OPERATOR_PINYIN_MAP = json.loads(PINYIN_MAP_FILE.read_text(encoding="utf-8"))
+else:
+    OPERATOR_PINYIN_MAP = {}
+
+CUSTOM_OPERATOR_PINYIN = {
+    "重岳": ["chong", "yue"],
+    "仇白": ["qiu", "bai"],
+    "吽": ["hong"],
+    "调香师": ["tiao", "xiang", "shi"],
+    "撷英调香师": ["xie", "ying", "tiao", "xiang", "shi"],
+    "伺夜": ["si", "ye"],
+}
+
+PROFESSION_ORDER = ("先锋", "近卫", "重装", "狙击", "术师", "医疗", "辅助", "特种")
+PROFESSION_RANKS = {
+    "先锋": 0, "近卫": 1, "重装": 2, "狙击": 3,
+    "术士": 4, "术师": 4, "医疗": 5, "辅助": 6, "特种": 7
+}
+
+try:
+    import pypinyin
+except ImportError:
+    pypinyin = None
+
+
+def get_operator_pinyin_tuple(name: str) -> tuple[str, ...]:
+    if name in CUSTOM_OPERATOR_PINYIN:
+        return tuple(CUSTOM_OPERATOR_PINYIN[name])
+    if name in OPERATOR_PINYIN_MAP:
+        return tuple(OPERATOR_PINYIN_MAP[name])
+    if pypinyin is not None:
+        return tuple(s.lower() for s in pypinyin.lazy_pinyin(name))
+    return tuple(name.lower())
+
+
+def operator_sort_key(profile: dict) -> tuple:
+    name = profile["name"]
+    prof_rank = PROFESSION_RANKS.get(profile.get("profession"), 8)
+    return (prof_rank, get_operator_pinyin_tuple(name), name)
+
+
 DAMAGE_NAMES = {"physical": "物理", "arts": "法术", "true": "真实", "elemental": "元素"}
 # 这些医疗分支的常态普攻是治疗，不产生对敌伤害；咒愈师另有法术攻击。
 # 分支依据：PRTS「分支一览」及各分支干员页面的分支信息。
@@ -257,7 +300,6 @@ REVIEWED_EXCLUSIONS = {
     "char_202_demkni": {"heal:hunger"},
     "char_159_peacok": {"control:can:stun"},
     "char_4147_mitm": {"mechanic:stop_attack"},
-    "char_1042_phatm2": {"target:elite_first"},
     "char_1016_agoat2": {"attack:5_hits"},
     "char_4063_quartz": {"debuff:fragile"},
     # 三技能近战复制体可拉拽并晕眩；远程复制体只能束缚，两种形态互斥。
@@ -289,10 +331,8 @@ SKILL_TEXT_FACTS = (
     ("attack:random_target", "目标", "target_priority", "有技能会随机选择攻击目标",
      r"随机攻击.{0,20}(?:敌人|目标)|随机(?:一名|一个)?(?:敌人|目标).{0,8}(?:攻击|造成)|"
      r"随机对.{0,25}(?:敌人|目标).{0,8}(?:攻击|造成|发射)|攻击.{0,10}随机(?:敌人|目标)"),
-    ("target:elite_first", "目标", "target_priority", "有技能优先攻击精英或领袖敌人",
+    ("target:elite_first", "目标", "target_priority", "有技能优先作用或仅作用于精英或领袖敌人",
      r"(?:优先(?:攻击)?.{0,5}|只(?:以|攻击).{0,5})(?:精英|领袖)"),
-    ("target:high_def_first", "目标", "target_priority", "有技能优先攻击防御力高的敌人",
-     r"(?:优先攻击.{0,20}|追踪[^，；。]{0,24})防御力(?:最高|较高)"),
     ("target:blocked_first", "目标", "target_priority", "有技能仅攻击或优先攻击被阻挡的敌人",
      r"(?:优先攻击|优先对|仅选择|只攻击)(?:[^，；。]{0,10}(?<!没有)(?<!未)被阻挡|(?:自身|我方|友方)阻挡的)"),
     ("target:unblocked_first", "目标", "target_priority", "有技能优先攻击未被阻挡的敌人",
@@ -309,9 +349,9 @@ SKILL_TEXT_FACTS = (
      r"(?:治疗|恢复|回复)[^，,；;。\n]{0,22}(?:范围内|攻击范围内|周围(?:的)?)[^，,；;。\n]{0,15}所有(?:友[方军]|我方)|"
      r"(?:范围内|攻击范围内|周围(?:的)?).{0,15}所有(?:友[方军]|我方).{0,30}(?:治疗|恢复|回复)(?![^，,；;。\n]{0,20}损伤)"),
     ("survival:physical_dodge", "生存", "dodge_type", "有技能提供物理闪避",
-     r"物理闪避"),
+     r"物理(?:和法术|与法术|及法术)?闪避|法术(?:和|与|及)物理闪避"),
     ("survival:arts_dodge", "生存", "dodge_type", "有技能提供法术闪避",
-     r"法术闪避"),
+     r"法术(?:和物理|与物理|及物理)?闪避|物理(?:和|与|及)法术闪避"),
     ("survival:conceal", "生存", "conceal", "有技能可以提供迷彩或隐匿效果",
      r"(?:获得|进入|赋予|施加)(?:.{0,10})(?:迷彩|隐匿)"),
     ("survival:resist_status", "生存", "status_resist", "有技能赋予抵抗效果",
@@ -911,7 +951,7 @@ def direct_dp_skill(skills: list[dict]) -> tuple[str, str] | None:
     for skill in skills:
         for match in re.finditer(pattern, skill["text"]):
             clause = re.split(r"[，,；;。]", skill["text"][:match.start()])[-1]
-            if re.search(r"逐渐|每秒|持续时间内|技能持续期间|一段时间内", clause):
+            if re.search(r"逐渐|每秒|持续时间内|技能持续期间|一段时间内|每次攻击", clause):
                 continue
             return skill["name"], skill["text"]
     return None
@@ -1442,7 +1482,7 @@ def facts_for(profile: dict, branch_rarities: dict[str, set[int]]) -> list[tuple
             f"技能「{ready['name']}」（最高等级）：初始技力 {ready['initial_sp']}；消耗 {ready['sp_cost']}")
     zero_sp = next((s for s in profile["skills"] if s["activation"] != "PASSIVE" and s["initial_sp"] == 0), None)
     if zero_sp:
-        add("skill:zero_initial_sp", "技能", "skill_initial_sp", "有需充能的技能初始技力为零",
+        add("skill:zero_initial_sp", "技能", "skill_initial_sp", "有消耗技力的技能初始技力为零",
             f"技能「{zero_sp['name']}」（最高等级）：初始技力 0")
     for seconds in (5, 8, 10, 12, 15, 18, 20, 25, 30, 35, 40, 45, 50, 60):
         found = next((s for s in profile["skills"] if s["duration_type"] != "AMMO"
@@ -1660,6 +1700,14 @@ def facts_for(profile: dict, branch_rarities: dict[str, set[int]]) -> list[tuple
     if physical_talent:
         add("attack:physical_switch", "攻击", "damage_switch", "有技能能将普通攻击改为物理伤害",
             f"天赋「{physical_talent[0]}」：{compact(physical_talent[1])}")
+    found_high_def = next(((f"技能「{s['name']}」（最高等级）", s["text"]) for s in profile["skills"]
+                           if re.search(r"优先攻击.{0,20}防御力(?:最高|较高)", s["text"])), None)
+    if not found_high_def:
+        found_high_def = next(((f"天赋「{tname}」", tphrase) for tname, tphrase in profile["talents"]
+                               if re.search(r"优先攻击.{0,20}防御力(?:最高|较高)", tphrase)), None)
+    if found_high_def:
+        add("target:high_def_first", "目标", "target_priority", "优先攻击防御力高的敌人",
+            f"{found_high_def[0]}：{compact(found_high_def[1])}")
     trap_evidence = trap_skill_evidence(profile)
     if trap_evidence:
         add("skill:trap", "召唤", "deployable_kind", "有技能可以获得或部署陷阱",
@@ -1846,6 +1894,9 @@ def facts_for(profile: dict, branch_rarities: dict[str, set[int]]) -> list[tuple
                          if re.search(r"(?:恢复|回复|治疗).{0,20}(?:友方|我方|其他).{0,18}(?:干员|单位).{0,18}生命|"
                                       r"(?:友方|我方|其他).{0,18}(?:干员|单位).{0,25}(?:恢复|回复|治疗).{0,20}生命", phrase)
                          and not re.search(r"(?:每秒|生命回复速度|持续恢复).{0,20}生命", phrase)), None)
+    if not direct_other and profile["branch"] in HEALING_ATTACK_BRANCHES:
+        branch_cn = BRANCH_NAMES.get(profile["branch"], profile["branch"])
+        direct_other = ("特性", f"{branch_cn}分支特性：普通攻击为直接治疗友方目标")
     if (not direct_other and not direct_heal(all_sources) and not has_summons) or audited.get("no_direct_heal"):
         add("heal:no_direct", "恢复", "direct_heal", "没有直接治疗其他干员的能力",
             audited.get("no_direct_heal") or "技能、天赋及模组未发现直接治疗；生命回复速度另计")
@@ -1908,17 +1959,17 @@ def facts_for(profile: dict, branch_rarities: dict[str, set[int]]) -> list[tuple
     base_cost = profile["cost_maxpot"]
     all_costs = [base_cost + m.get("cost_delta", 0) for m in profile["modules"]]
     if all(10 <= c <= 99 for c in all_costs):
-        add("cost:maxpot:two_digits", "统计", "maxpot_cost", "满潜时部署费用为两位数",
-            f"精英最高阶段面板费用扣除潜能费用后为 {base_cost}" if len(set(all_costs)) == 1
-            else f"无论是否装备模组，满潜部署费用均为两位数（{min(all_costs)}～{max(all_costs)}）")
+        add("cost:maxpot:two_digits", "统计", "maxpot_cost", "满潜满练时部署费用为两位数",
+            f"最高精英阶段满潜能面板费用（含常规模组）为 {base_cost}" if len(set(all_costs)) == 1
+            else f"无论是否装备模组，满潜满练部署费用均为两位数（{min(all_costs)}～{max(all_costs)}）")
     if all(c <= 9 for c in all_costs):
-        add("cost:maxpot:one_digit", "统计", "maxpot_cost", "满潜时部署费用为一位数",
-            f"精英最高阶段面板费用扣除潜能费用后为 {base_cost}" if len(set(all_costs)) == 1
-            else f"无论是否装备模组，满潜部署费用均为一位数（{min(all_costs)}～{max(all_costs)}）")
+        add("cost:maxpot:one_digit", "统计", "maxpot_cost", "满潜满练时部署费用为一位数",
+            f"最高精英阶段满潜能面板费用（含常规模组）为 {base_cost}" if len(set(all_costs)) == 1
+            else f"无论是否装备模组，满潜满练部署费用均为一位数（{min(all_costs)}～{max(all_costs)}）")
     if len(set(all_costs)) == 1:
         cost = all_costs[0]
         add(f"cost:maxpot:exact:{cost}", "数值", "maxpot_cost",
-            f"满潜时部署费用为{cost}", f"精英最高阶段面板费用扣除潜能费用后为 {cost}")
+            f"满潜满练时部署费用为{cost}", f"最高精英阶段满潜能面板费用（含常规模组）为 {cost}")
     return output
 
 
@@ -1973,6 +2024,7 @@ def build_facts(profiles: list[dict]) -> tuple[list[dict], list[list[int]]]:
     useful.sort(key=lambda x: x["id"])
     useful_by_id = {fact["id"]: fact for fact in useful}
     for fact in useful:
+        fact["members"].sort(key=lambda idx: operator_sort_key(profiles[idx]))
         fact["memberNames"] = [profiles[index]["name"] for index in fact["members"]]
         implies = [fid for fid in implied_fact_ids(fact["id"])
                    if fid in useful_by_id
@@ -2179,7 +2231,7 @@ def main() -> None:
         missing = "、".join(profile["name"] for index, profile in enumerate(profiles) if index not in fallback)
         raise ValueError(f"有干员无法组成唯一的四线索题目，拒绝发布不完整答案池：{missing}")
     released = {
-        "version": f"{data['资料说明'].get('来源提交') or 'local'}:{hashlib.sha256(raw).hexdigest()[:12]}:semantic-45",
+        "version": f"{data['资料说明'].get('来源提交') or 'local'}:{hashlib.sha256(raw).hexdigest()[:12]}:semantic-46",
         "operators": [{key: item[key] for key in ("id", "name", "profession", "rarity", "archive")} for item in profiles],
         "facts": facts, "byOperator": by_operator, "fallback": fallback,
     }

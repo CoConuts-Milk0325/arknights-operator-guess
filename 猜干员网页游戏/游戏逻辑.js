@@ -10,7 +10,7 @@
     "next-button", "give-up-button", "feedback", "guesses-list", "result-screen",
     "result-kicker", "result-title", "result-subtitle", "result-score", "answer-name",
     "answer-meta", "evidence-list", "archive-link", "again-button", "record-summary",
-    "clear-record-button",
+    "clear-record-button", "rarity-filter", "rarity-count",
   ].map((id) => [id, $(id)]));
 
   if (!data || !Array.isArray(data.operators) || !Array.isArray(data.facts)) {
@@ -20,14 +20,73 @@
   }
 
   const STORAGE_KEY = "sealed-dossier-history-v2";
+  const RARITY_KEY = "sealed-dossier-rarities-v1";
   const allIndexes = data.operators.map((_, index) => index);
+  const searchIndex = data.operators.map((operator) => {
+    const name = normalizeSearch(operator.name);
+    const entry = (window.OPERATOR_SEARCH_INDEX || {})[name] || {};
+    return {
+      name,
+      aliases: (entry.aliases || []).map(normalizeSearch),
+      pinyin: entry.pinyinFull || [],
+      initials: entry.pinyinInitials || [],
+    };
+  });
   const memberSets = data.facts.map((fact) => new Set(fact.possibleMembers || fact.members));
   const eligible = Object.keys(data.fallback).map(Number).filter(Number.isInteger);
+  const rarities = [...new Set(eligible.map((index) => Number(data.operators[index].rarity)))].sort((a, b) => a - b);
+  let selectedRarities = readRarities();
   let record = readRecord();
   let round = null;
   let selected = null;
   let suggestions = [];
   let highlighted = -1;
+
+  function readRarities() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(RARITY_KEY) || "null");
+      if (Array.isArray(saved)) {
+        const valid = saved.filter((rarity) => rarities.includes(rarity));
+        if (valid.length) return new Set(valid);
+      }
+    } catch (_) { /* 本地存储不可用时使用全部星级。 */ }
+    return new Set(rarities);
+  }
+
+  function rarityPool() {
+    return eligible.filter((index) => selectedRarities.has(Number(data.operators[index].rarity)));
+  }
+
+  function renderRarityFilter() {
+    if (!ui["rarity-filter"].children.length) {
+      ui["rarity-filter"].replaceChildren(...rarities.map((rarity) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "rarity-button";
+        button.dataset.rarity = String(rarity);
+        button.textContent = `${rarity} 星`;
+        button.addEventListener("click", () => {
+          if (selectedRarities.has(rarity) && selectedRarities.size === 1) return;
+          if (selectedRarities.has(rarity)) selectedRarities.delete(rarity);
+          else selectedRarities.add(rarity);
+          try { localStorage.setItem(RARITY_KEY, JSON.stringify([...selectedRarities])); }
+          catch (_) { /* 无法保存偏好时仍可筛选。 */ }
+          renderRarityFilter();
+          if (round && !round.finished && !selectedRarities.has(Number(data.operators[round.target].rarity))) {
+            begin("星级范围已更新，已重新抽题。");
+          } else if (round && !round.finished) {
+            if (selected !== null && !selectedRarities.has(Number(data.operators[selected].rarity))) clearSelection();
+            else if (selected === null) renderSuggestions();
+          }
+        });
+        return button;
+      }));
+    }
+    for (const button of ui["rarity-filter"].children) {
+      button.setAttribute("aria-pressed", String(selectedRarities.has(Number(button.dataset.rarity))));
+    }
+    ui["rarity-count"].textContent = `${rarityPool().length} 名可出题`;
+  }
 
   function readRecord() {
     try {
@@ -165,10 +224,10 @@
   }
 
   function chooseRound() {
-    let unseen = eligible.filter((index) => !record.recentAnswers.includes(data.operators[index].id));
+    const pool = rarityPool();
+    let unseen = pool.filter((index) => !record.recentAnswers.includes(data.operators[index].id));
     if (!unseen.length) {
-      record.recentAnswers = record.recentAnswers.slice(-20);
-      unseen = eligible.filter((index) => !record.recentAnswers.includes(data.operators[index].id));
+      unseen = pool;
     }
     const random = seededRandom(newSeed());
     const sampled = shuffle(unseen, random).slice(0, 14);
@@ -245,17 +304,15 @@
   }
 
   function renderSuggestions() {
-    const query = ui["operator-search"].value.trim().toLocaleLowerCase();
+    const query = normalizeSearch(ui["operator-search"].value);
     if (!query || !round || round.finished) { hideSuggestions(); return; }
     suggestions = allIndexes
-      .filter((index) => data.operators[index].name.toLocaleLowerCase().includes(query))
-      .sort((left, right) => {
-        const a = data.operators[left].name.toLocaleLowerCase();
-        const b = data.operators[right].name.toLocaleLowerCase();
-        return Number(b === query) - Number(a === query)
-          || Number(b.startsWith(query)) - Number(a.startsWith(query))
-          || a.length - b.length;
-      }).slice(0, 9);
+      .filter((index) => selectedRarities.has(Number(data.operators[index].rarity)))
+      .map((index) => ({ index, score: scoreSearch(searchIndex[index], query) }))
+      .filter((match) => match.score > 0)
+      .sort((a, b) => b.score - a.score
+        || data.operators[a.index].name.length - data.operators[b.index].name.length)
+      .slice(0, 9).map((match) => match.index);
     if (!suggestions.length) { hideSuggestions(); return; }
     ui["suggestions"].replaceChildren(...suggestions.map((index, position) => {
       const option = document.createElement("button");
@@ -275,6 +332,22 @@
     ui["operator-search"].setAttribute("aria-expanded", "true");
   }
 
+  function normalizeSearch(value) {
+    return value.normalize("NFKC").toLowerCase().replace(/[üǖǘǚǜ]/g, "v")
+      .normalize("NFD").replace(/\p{M}/gu, "").replace(/[^\p{L}\p{N}]/gu, "");
+  }
+
+  function scoreSearch(entry, query) {
+    const score = (values, exact, prefix, partial = 0) => Math.max(0, ...values.map((value) =>
+      value === query ? exact : value.startsWith(query) ? prefix : value.includes(query) ? partial : 0));
+    return Math.max(
+      score([entry.name], 1000, 800, 600),
+      score(entry.aliases, 900, 650, 450),
+      score(entry.pinyin, 750, 550, 300),
+      score(entry.initials, 500, 400),
+    );
+  }
+
   function selectOperator(index) {
     selected = index;
     ui["operator-search"].value = data.operators[index].name;
@@ -285,7 +358,7 @@
     ui["submit-button"].focus();
   }
 
-  function begin() {
+  function begin(message = "") {
     round = chooseRound();
     if (!round) {
       ui["data-status"].textContent = "当前档案未能生成唯一题目";
@@ -301,7 +374,7 @@
     record.recentTopics = record.recentTopics.slice(-80);
     saveRecord();
     showScreen("game");
-    renderGame();
+    renderGame(message);
     ui["operator-search"].focus();
   }
 
@@ -370,8 +443,8 @@
     ui["rules-panel"].hidden = !opening;
     ui["rules-toggle"].setAttribute("aria-expanded", String(opening));
   });
-  ui["start-button"].addEventListener("click", begin);
-  ui["again-button"].addEventListener("click", begin);
+  ui["start-button"].addEventListener("click", () => begin());
+  ui["again-button"].addEventListener("click", () => begin());
   ui["submit-button"].addEventListener("click", submitGuess);
   ui["next-button"].addEventListener("click", revealNext);
   ui["give-up-button"].addEventListener("click", () => finish(false));
@@ -407,5 +480,6 @@
 
   ui["data-status"].textContent = `${data.operators.length} 名干员 · 本地快照`;
   ui["start-button"].disabled = eligible.length === 0;
+  renderRarityFilter();
   saveRecord();
 })();
