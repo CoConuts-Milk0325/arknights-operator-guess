@@ -63,7 +63,7 @@ function fixture() {
   return { version: 'test', operators, facts, byOperator, fallback };
 }
 
-function boot(saved = new Map(), data = fixture()) {
+function boot(saved = new Map(), data = fixture(), search = '') {
   const elements = new Map([...html.matchAll(/\bid="([^"]+)"/g)]
     .map(([, id]) => [id, new Element()]));
   const document = {
@@ -73,6 +73,7 @@ function boot(saved = new Map(), data = fixture()) {
   let seed = 1;
   const window = {
     GUESS_DATA: data,
+    location: { search },
     crypto: { getRandomValues(values) { values[0] = seed++; } },
     scrollTo() {},
   };
@@ -84,7 +85,7 @@ function boot(saved = new Map(), data = fixture()) {
   if (existsSync(searchIndexPath)) {
     vm.runInNewContext(readFileSync(searchIndexPath, 'utf8'), { window });
   }
-  vm.runInNewContext(script, { document, window, localStorage, setTimeout });
+  vm.runInNewContext(script, { document, window, localStorage, setTimeout, URLSearchParams });
   const element = (id) => elements.get(id);
   const rarityButton = (rarity) => {
     const button = element('rarity-filter')?.children
@@ -198,4 +199,59 @@ test('shared nicknames keep every matching form and follow the star filter', () 
   assert.deepEqual(suggestionNames(game, 'didi'), ['斯卡蒂']);
   assert.deepEqual(suggestionNames(game, '  '), []);
   assert.deepEqual(suggestionNames(game, '不存在的外号'), []);
+});
+
+test('URL target fixes the answer across rounds and reloads despite recent history', () => {
+  const game = boot(new Map(), fixture(), '?target=甲');
+  game.element('start-button').dispatch('click');
+  assert.equal(game.target().name, '甲');
+  game.element('give-up-button').dispatch('click');
+  assert.equal(game.element('answer-name').textContent, '甲');
+  game.element('again-button').dispatch('click');
+  assert.equal(game.target().name, '甲');
+  const reloaded = boot(game.saved, fixture(), '?target=甲');
+  reloaded.element('start-button').dispatch('click');
+  assert.equal(reloaded.target().name, '甲');
+});
+
+test('URL target follows the star filter and returns when its star is enabled', () => {
+  const game = boot(new Map(), fixture(), '?target=甲');
+  selectOnly(game, 2);
+  game.element('start-button').dispatch('click');
+  assert.equal(game.target().name, '乙');
+  game.rarityButton(1).dispatch('click');
+  game.element('give-up-button').dispatch('click');
+  game.element('again-button').dispatch('click');
+  assert.equal(game.target().name, '甲');
+  game.rarityButton(1).dispatch('click');
+  assert.equal(game.target().name, '乙');
+});
+
+test('URL target uses canonical-name priority and supports aliases and pinyin', () => {
+  const data = fixture();
+  ['桃金娘', '德克萨斯', '斯卡蒂', '浊心斯卡蒂', '维什戴尔', '赤刃明霄陈']
+    .forEach((name, index) => { data.operators[index].name = name; });
+  for (const [query, expected] of [
+    ['火陈', '赤刃明霄陈'], ['huochen', '赤刃明霄陈'],
+    ['CHI REN MING XIAO CHEN', '赤刃明霄陈'], ['crmxc', '赤刃明霄陈'],
+    ['斯卡蒂', '斯卡蒂'], ['蒂蒂', '斯卡蒂'],
+  ]) {
+    const game = boot(new Map(), data, `?target=${encodeURIComponent(query)}`);
+    game.element('start-button').dispatch('click');
+    assert.equal(game.target().name, expected, query);
+  }
+});
+
+test('invalid or unavailable URL targets fall back to a playable random round', () => {
+  for (const search of ['?target=', '?target=%20%20', '?target=不存在的干员', '?target=%E0%A4%A']) {
+    const game = boot(new Map(), fixture(), search);
+    selectOnly(game, 2);
+    game.element('start-button').dispatch('click');
+    assert.equal(game.target().name, '乙', search);
+  }
+  const data = fixture();
+  delete data.fallback[0];
+  const game = boot(new Map(), data, '?target=甲');
+  game.element('start-button').dispatch('click');
+  assert.notEqual(game.target().name, '甲');
 });

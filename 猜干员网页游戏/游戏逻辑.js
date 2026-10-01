@@ -35,6 +35,8 @@
   const memberSets = data.facts.map((fact) => new Set(fact.possibleMembers || fact.members));
   const eligible = Object.keys(data.fallback).map(Number).filter(Number.isInteger);
   const rarities = [...new Set(eligible.map((index) => Number(data.operators[index].rarity)))].sort((a, b) => a - b);
+  const targetQuery = normalizeSearch(new URLSearchParams(window.location.search).get("target") || "");
+  const targetOperator = targetQuery ? searchMatches(targetQuery, allIndexes)[0] ?? null : null;
   let selectedRarities = readRarities();
   let record = readRecord();
   let round = null;
@@ -225,6 +227,11 @@
 
   function chooseRound() {
     const pool = rarityPool();
+    // 与语音模式共用 ?target= 入口；定向调试仍遵守星级筛选，但允许重复答案。
+    if (targetOperator !== null && pool.includes(targetOperator)) {
+      const targeted = createRound(newSeed(), targetOperator);
+      if (targeted) return targeted;
+    }
     let unseen = pool.filter((index) => !record.recentAnswers.includes(data.operators[index].id));
     if (!unseen.length) {
       unseen = pool;
@@ -306,13 +313,8 @@
   function renderSuggestions() {
     const query = normalizeSearch(ui["operator-search"].value);
     if (!query || !round || round.finished) { hideSuggestions(); return; }
-    suggestions = allIndexes
-      .filter((index) => selectedRarities.has(Number(data.operators[index].rarity)))
-      .map((index) => ({ index, score: scoreSearch(searchIndex[index], query) }))
-      .filter((match) => match.score > 0)
-      .sort((a, b) => b.score - a.score
-        || data.operators[a.index].name.length - data.operators[b.index].name.length)
-      .slice(0, 9).map((match) => match.index);
+    suggestions = searchMatches(query, allIndexes
+      .filter((index) => selectedRarities.has(Number(data.operators[index].rarity)))).slice(0, 9);
     if (!suggestions.length) { hideSuggestions(); return; }
     ui["suggestions"].replaceChildren(...suggestions.map((index, position) => {
       const option = document.createElement("button");
@@ -346,6 +348,14 @@
       score(entry.pinyin, 750, 550, 300),
       score(entry.initials, 500, 400),
     );
+  }
+
+  function searchMatches(query, pool) {
+    return pool.map((index) => ({ index, score: scoreSearch(searchIndex[index], query) }))
+      .filter((match) => match.score > 0)
+      .sort((a, b) => b.score - a.score
+        || data.operators[a.index].name.length - data.operators[b.index].name.length)
+      .map((match) => match.index);
   }
 
   function selectOperator(index) {
