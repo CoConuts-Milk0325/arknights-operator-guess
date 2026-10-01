@@ -29,6 +29,8 @@ class AuditCorrectionTests(unittest.TestCase):
             "mechanic:stop_attack": ("渡桥",),
             "target:high_def_first": ("丰川祥子",),
             "attack:5_hits": ("纯烬艾雅法拉",),
+            "range:can_shrink": ("远牙",),
+            "range:expand": ("灰烬", "和弦", "戴菲恩", "深靛", "爱丽丝", "黑键", "玫拉"),
             "debuff:fragile": ("石英",),
             "control:one": ("可颂",),
             "control:can:teleport": ("珊比",),
@@ -43,6 +45,7 @@ class AuditCorrectionTests(unittest.TestCase):
 
     def test_missing_source_backed_clues_are_included(self):
         included = {
+            "range:two_skills_outside": ("远牙",),
             "air:normal_attack": ("埃癸斯", "天空盒"),
             "ally:block_up": ("桃金娘", "极境", "琴柳", "万顷", "嘉辛塔", "帕拉斯", "娜斯提"),
             "ally:output:attack": ("华法琳", "空构", "娜斯提"),
@@ -408,6 +411,30 @@ class AuditCorrectionTests(unittest.TestCase):
         self.assertLessEqual(set(specific["members"]), set(general["members"]))
         self.assertIn("attack:extra_arts", specific.get("implies", []))
 
+    def test_chilchuck_random_lump_sum_dp_uses_first_skill(self):
+        skills = game.make_profile(self.records["齐尔查克"])["skills"]
+        self.assertEqual(game.direct_dp_skill([skills[0]]),
+                         ("开锁工具", "停止攻击，技能结束后随机获得4-10点部署费用"))
+        self.assertIsNone(game.direct_dp_skill([skills[1]]))
+        evidence = self.clues("齐尔查克")["mechanic:deployment_cost"]
+        self.assertIn("开锁工具", evidence)
+        self.assertIn("技能结束后随机获得4-10点部署费用", evidence)
+        self.assertNotIn("随机应变", evidence)
+
+    def test_repeated_dp_is_excluded_but_next_attack_lump_sum_is_kept(self):
+        ines = game.make_profile(self.records["伊内丝"])["skills"]
+        self.assertIsNotNone(game.direct_dp_skill([ines[0]]))
+        self.assertIsNone(game.direct_dp_skill([ines[2]]))
+        qingzhi = game.make_profile(self.records["青枳"])["skills"][1]
+        periodic_clause = qingzhi["text"].split("，")[-2]
+        self.assertIsNone(game.direct_dp_skill([
+            {"name": qingzhi["name"], "text": periodic_clause}]))
+        self.assertEqual(game.direct_dp_skill([qingzhi])[0], qingzhi["name"])
+        for name in ("冬时", "谜图"):
+            skills = game.make_profile(self.records[name])["skills"]
+            self.assertIsNotNone(game.direct_dp_skill([skills[0]]))
+            self.assertIsNone(game.direct_dp_skill([skills[1]]))
+
     def test_round_16_fixes(self):
         for name in ("锡兰", "絮雨", "诺威尔"):
             self.assertIn("heal:direct_other", self.clues(name))
@@ -416,7 +443,7 @@ class AuditCorrectionTests(unittest.TestCase):
         for name in ("弑君者", "红", "杰西卡", "猎蜂"):
             self.assertIn("survival:physical_dodge", self.clues(name))
 
-        for name in ("寻澜", "晓歌", "齐尔查克"):
+        for name in ("寻澜", "晓歌"):
             self.assertNotIn("mechanic:deployment_cost", self.clues(name))
 
         for name in ("黑键", "薇薇安娜", "酒神"):
@@ -425,6 +452,52 @@ class AuditCorrectionTests(unittest.TestCase):
         self.assertIn("target:high_def_first", self.clues("史都华德"))
         self.assertIn("target:high_def_first", self.clues("刻俄柏"))
         self.assertNotIn("target:high_def_first", self.clues("丰川祥子"))
+
+    def test_fever_two_hits_keep_their_condition(self):
+        profile = game.make_profile(self.records["丰川祥子"])
+        skill = next(s for s in profile["skills"] if s["name"] == "满月的舞会")
+        self.assertEqual({2}, game.skill_hit_counts(skill["text"]))
+        self.assertIn("Fever期间", self.clues("丰川祥子")["attack:two_hits"])
+
+    def test_unrelated_talent_probability_does_not_hide_three_hits(self):
+        profile = game.make_profile(self.records["薇薇安娜"])
+        self.assertEqual({2, 3}, game.skill_hit_counts(profile["skills"][2]["text"]))
+        # “可以”涵盖概率触发；该条件必须出现在支持该事实的技能文本中。
+        self.assertEqual({2}, game.skill_hit_counts(profile["skills"][1]["text"]))
+
+    def test_removed_allied_trigger_is_not_used_as_a_clue(self):
+        for name in ("烈夏", "丰川祥子", "八幡海铃", "三角初华", "祐天寺若麦", "若叶睦"):
+            with self.subTest(operator=name):
+                self.assertNotIn("skill:allied_skill_trigger", set(self.clues(name)))
+
+    def test_fever_candidates_are_retained_for_unique_rounds(self):
+        profiles = [game.make_profile(record) for record in self.records.values()]
+        facts, _ = game.build_facts(profiles)
+        by_id = {f["id"]: f for f in facts}
+        index = {p["name"]: i for i, p in enumerate(profiles)}
+        hits = by_id["attack:two_hits"]
+        self.assertIn(index["丰川祥子"], hits.get("possibleMembers", hits["members"]))
+        self.assertNotIn("skill:allied_skill_trigger", by_id)
+
+    def test_body_subset_range_is_shrinking_but_summon_effects_are_not(self):
+        clues = self.clues("Mon3tr")
+        self.assertIn("range:can_shrink", clues)
+        self.assertIn("策略：熔毁", clues["range:can_shrink"])
+        for name in ("梅尔", "渡桥", "远牙", "灰烬", "爱丽丝"):
+            with self.subTest(operator=name):
+                self.assertNotIn("range:can_shrink", self.clues(name))
+
+    def test_clean_preserves_sentence_boundaries_without_extra_commas(self):
+        cases = {
+            "演奏：\\n钢琴：": "演奏：钢琴：",
+            "技能。\\nFever期间": "技能。Fever期间",
+            "连续攻击两次；\n蓄力额外效果：": "连续攻击两次；蓄力额外效果：",
+            "减缓 ，Fever": "减缓，Fever",
+            "第一句\r\n第二句": "第一句，第二句",
+        }
+        for raw, expected in cases.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(expected, game.clean(raw))
 
 
 if __name__ == "__main__":
