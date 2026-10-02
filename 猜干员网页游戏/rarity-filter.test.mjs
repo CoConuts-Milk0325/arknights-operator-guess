@@ -106,6 +106,79 @@ function selectOnly(game, rarity) {
   }
 }
 
+function recentAnswerNames(game) {
+  const list = game.element('recent-answer-list');
+  assert.ok(list, '最近五题答案列表应存在');
+  return list.children.map((item) => item.children[1].textContent);
+}
+
+test('recent answer history reveals only completed rounds, including correct answers and give-ups', () => {
+  const game = boot();
+  assert.deepEqual(recentAnswerNames(game), []);
+  assert.equal(game.element('recent-answer-empty').hidden, false);
+  game.element('start-button').dispatch('click');
+  const first = game.target().name;
+  assert.deepEqual(recentAnswerNames(game), []);
+  game.element('operator-search').value = first;
+  game.element('operator-search').dispatch('input');
+  game.element('suggestions').children[0].dispatch('click');
+  game.element('submit-button').dispatch('click');
+  assert.deepEqual(recentAnswerNames(game), [first]);
+  assert.equal(game.element('recent-answer-empty').hidden, true);
+  game.element('give-up-button').dispatch('click');
+  assert.deepEqual(recentAnswerNames(game), [first]);
+  game.element('again-button').dispatch('click');
+  const second = game.target().name;
+  assert.deepEqual(recentAnswerNames(game), [first]);
+  game.element('give-up-button').dispatch('click');
+  assert.deepEqual(recentAnswerNames(game), [second, first]);
+});
+
+test('recent answer history retains the last five completed rounds newest first across reloads', () => {
+  const game = boot();
+  const answers = [];
+  for (let index = 0; index < 7; index++) {
+    game.element(index ? 'again-button' : 'start-button').dispatch('click');
+    answers.push(game.target().name);
+    game.element('give-up-button').dispatch('click');
+  }
+  const expected = answers.slice(-5).reverse();
+  assert.deepEqual(recentAnswerNames(game), expected);
+  assert.equal(game.record().completedAnswers.length, 5);
+  assert.deepEqual(game.record().completedAnswers.map((entry) => entry.number), [3, 4, 5, 6, 7]);
+  game.element('again-button').dispatch('click');
+  const reloaded = boot(game.saved);
+  assert.deepEqual(recentAnswerNames(reloaded), expected);
+});
+
+test('recent answer history keeps repeated answers and is cleared with the play record', () => {
+  const game = boot(new Map(), fixture(), '?target=甲');
+  game.element('start-button').dispatch('click');
+  game.element('give-up-button').dispatch('click');
+  game.element('again-button').dispatch('click');
+  game.element('give-up-button').dispatch('click');
+  assert.deepEqual(recentAnswerNames(game), ['甲', '甲']);
+  game.element('clear-record-button').dispatch('click');
+  assert.deepEqual(recentAnswerNames(game), []);
+  assert.equal(game.element('recent-answer-empty').hidden, false);
+  assert.deepEqual(recentAnswerNames(boot(game.saved)), []);
+});
+
+test('legacy started-round records and abandoned rounds never appear as completed answers', () => {
+  const saved = new Map([['sealed-dossier-history-v2', JSON.stringify({
+    plays: 2, points: 3, recentAnswers: ['one', 'two'],
+    completedAnswers: [null, {}, { name: '错误记录', number: -1 }],
+  })]]);
+  const game = boot(saved);
+  assert.deepEqual(recentAnswerNames(game), []);
+  game.element('start-button').dispatch('click');
+  game.rarityButton(game.target().rarity).dispatch('click');
+  assert.deepEqual(recentAnswerNames(game), []);
+  game.element('give-up-button').dispatch('click');
+  assert.equal(game.record().completedAnswers.length, 1);
+  assert.equal(game.record().completedAnswers[0].number, 3);
+});
+
 test('selected stars limit both new answers and search suggestions', () => {
   const game = boot();
   selectOnly(game, 2);
@@ -184,8 +257,15 @@ function suggestionNames(game, query) {
 
 test('nicknames and pinyin select the canonical operator in the clue game', () => {
   const game = searchGame();
-  for (const query of ['火陈', 'huochen', 'CHI REN MING XIAO CHEN', 'crmxc', '赤刃明霄陈']) {
-    assert.equal(suggestionNames(game, query)[0], '赤刃明霄陈', query);
+  for (const removed of ['火陈', 'huochen']) {
+    assert.deepEqual(suggestionNames(game, removed), [], removed);
+  }
+  for (const [query, expected] of [
+    ['红蒂', '浊心斯卡蒂'], ['hongdi', '浊心斯卡蒂'],
+    ['CHI REN MING XIAO CHEN', '赤刃明霄陈'], ['crmxc', '赤刃明霄陈'],
+    ['赤刃明霄陈', '赤刃明霄陈'],
+  ]) {
+    assert.equal(suggestionNames(game, query)[0], expected, query);
   }
   game.element('suggestions').children[0].dispatch('click');
   assert.equal(game.element('operator-search').value, '赤刃明霄陈');
@@ -232,7 +312,7 @@ test('URL target uses canonical-name priority and supports aliases and pinyin', 
   ['桃金娘', '德克萨斯', '斯卡蒂', '浊心斯卡蒂', '维什戴尔', '赤刃明霄陈']
     .forEach((name, index) => { data.operators[index].name = name; });
   for (const [query, expected] of [
-    ['火陈', '赤刃明霄陈'], ['huochen', '赤刃明霄陈'],
+    ['红蒂', '浊心斯卡蒂'], ['hongdi', '浊心斯卡蒂'],
     ['CHI REN MING XIAO CHEN', '赤刃明霄陈'], ['crmxc', '赤刃明霄陈'],
     ['斯卡蒂', '斯卡蒂'], ['蒂蒂', '斯卡蒂'],
   ]) {

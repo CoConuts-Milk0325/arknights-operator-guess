@@ -15,6 +15,7 @@ function inline(value) {
 function renderMarkdown(source) {
   const lines = source.replace(/\r\n/g, '\n').split('\n');
   const sections = [];
+  const faqItems = [];
   const body = [];
   let title = '';
   let lead = '';
@@ -22,6 +23,8 @@ function renderMarkdown(source) {
   let list = null;
   let sectionNumber = 0;
   let subNumber = 0;
+  let inFaqSection = false;
+  let faqSectionId = '';
 
   const flushParagraph = () => {
     if (paragraph.length) body.push(`<p>${inline(paragraph.join(' '))}</p>`);
@@ -46,6 +49,8 @@ function renderMarkdown(source) {
         sectionNumber++;
         subNumber = 0;
         const id = `section-${sectionNumber}`;
+        inFaqSection = heading[2].includes('常见疑问');
+        if (inFaqSection) faqSectionId = id;
         sections.push({ id, text: heading[2], children: [] });
         body.push(`<section class="doc-section" aria-labelledby="${id}"><div class="section-label">SECTION ${String(sectionNumber).padStart(2, '0')}</div><h2 id="${id}">${inline(heading[2])}</h2>`);
       } else {
@@ -76,9 +81,10 @@ function renderMarkdown(source) {
       continue;
     }
 
-    const faq = sectionNumber === 7 && line.match(/^\*\*(.+?[？?])\*\*\s*(.+)$/);
+    const faq = inFaqSection && line.match(/^\*\*(.+?[？?])\*\*\s*(.+)$/);
     if (faq) {
       flushParagraph(); closeList();
+      faqItems.push({ question: faq[1], answer: faq[2] });
       body.push(`<div class="faq-item"><h3>${inline(faq[1])}</h3><p>${inline(faq[2])}</p></div>`);
       continue;
     }
@@ -102,12 +108,23 @@ function renderMarkdown(source) {
       ? `<ul>${children.map((child) => `<li><a href="#${child.id}">${escapeHtml(child.text)}</a></li>`).join('')}</ul>`
       : ''}</li>`).join('');
 
-  return { title, lead, navigation, body: body.join('\n') };
+  return { title, lead, navigation, body: body.join('\n'), faqItems, faqSectionId };
 }
 
 export async function generateRulePage(gameDirectory) {
   const markdown = await readFile(join(gameDirectory, '玩家规则.md'), 'utf8');
-  const { title, lead, navigation, body } = renderMarkdown(markdown);
+  const { title, lead, navigation, body, faqItems, faqSectionId } = renderMarkdown(markdown);
+  const homepagePath = join(gameDirectory, '首页.html');
+  const homepage = await readFile(homepagePath, 'utf8');
+  const faqPattern = /(<div class="faq-grid">)[\s\S]*?(<\/div>\s*<\/aside>)/;
+  if (!faqItems.length || !faqPattern.test(homepage)) {
+    throw new Error('未找到玩家规则中的常见疑问或首页问答容器，无法同步规则页面');
+  }
+  const faqHtml = faqItems.map(({ question, answer }) =>
+    `        <details><summary>${inline(question)}</summary><p>${inline(answer)}</p></details>`).join('\n');
+  const updatedHomepage = homepage.replace(faqPattern, (_, opening, closing) =>
+    `${opening}\n${faqHtml}\n      ${closing}`)
+    .replace(/href="规则说明\.html#section-\d+"/, `href="规则说明.html#${faqSectionId}"`);
   const displayTitle = title.replace(/^密封档案 · /, '').replace('｜完整玩家规则', '玩家规则');
   const html = `<!doctype html>
 <html lang="zh-CN">
@@ -162,6 +179,7 @@ export async function generateRulePage(gameDirectory) {
 </body>
 </html>\n`;
   await writeFile(join(gameDirectory, '规则说明.html'), html, 'utf8');
+  if (updatedHomepage !== homepage) await writeFile(homepagePath, updatedHomepage, 'utf8');
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

@@ -433,15 +433,18 @@ window.OPERATOR_SEARCH_INDEX = {
   },
   "信仰搅拌机": {
     "aliases": [
-      "菲亚梅塔的爷爷"
+      "老爷子",
+      "爷爷"
     ],
     "pinyinFull": [
       "xinyangjiaobanji",
-      "feiyameitadeyeye"
+      "laoyezi",
+      "yeye"
     ],
     "pinyinInitials": [
       "xyjbj",
-      "fymtdyy"
+      "lyz",
+      "yy"
     ]
   },
   "假日威龙陈": {
@@ -1247,15 +1250,18 @@ window.OPERATOR_SEARCH_INDEX = {
   },
   "安哲拉": {
     "aliases": [
-      "法老"
+      "法老",
+      "海猫"
     ],
     "pinyinFull": [
       "anzhela",
-      "falao"
+      "falao",
+      "haimao"
     ],
     "pinyinInitials": [
       "azl",
-      "fl"
+      "fl",
+      "hm"
     ]
   },
   "安德切尔": {
@@ -1742,19 +1748,16 @@ window.OPERATOR_SEARCH_INDEX = {
   "推进之王": {
     "aliases": [
       "推王",
-      "王小姐",
       "王维娜"
     ],
     "pinyinFull": [
       "tuijinzhiwang",
       "tuiwang",
-      "wangxiaojie",
       "wangweina"
     ],
     "pinyinInitials": [
       "tjzw",
       "tw",
-      "wxj",
       "wwn"
     ]
   },
@@ -2087,15 +2090,18 @@ window.OPERATOR_SEARCH_INDEX = {
   },
   "杰西卡": {
     "aliases": [
-      "富婆"
+      "富婆",
+      "猫猫头"
     ],
     "pinyinFull": [
       "jiexika",
-      "fupo"
+      "fupo",
+      "maomaotou"
     ],
     "pinyinInitials": [
       "jxk",
-      "fp"
+      "fp",
+      "mmt"
     ]
   },
   "松果": {
@@ -2190,18 +2196,15 @@ window.OPERATOR_SEARCH_INDEX = {
   },
   "桃金娘": {
     "aliases": [
-      "桃子",
-      "法国干员"
+      "桃子"
     ],
     "pinyinFull": [
       "taojinniang",
-      "taozi",
-      "faguoganyuan"
+      "taozi"
     ],
     "pinyinInitials": [
       "tjn",
-      "tz",
-      "fggy"
+      "tz"
     ]
   },
   "桑葚": {
@@ -2243,19 +2246,16 @@ window.OPERATOR_SEARCH_INDEX = {
   "棘刺": {
     "aliases": [
       "鸡翅",
-      "接头霸王",
-      "寒哥的爹"
+      "接头霸王"
     ],
     "pinyinFull": [
       "jici",
       "jichi",
-      "jietoubawang",
-      "hangededie"
+      "jietoubawang"
     ],
     "pinyinInitials": [
       "jc",
-      "jtbw",
-      "hgdd"
+      "jtbw"
     ]
   },
   "森蚺": {
@@ -2782,17 +2782,17 @@ window.OPERATOR_SEARCH_INDEX = {
   },
   "焰尾": {
     "aliases": [
-      "小松鼠",
+      "松鼠",
       "八秒短"
     ],
     "pinyinFull": [
       "yanwei",
-      "xiaosongshu",
+      "songshu",
       "bamiaoduan"
     ],
     "pinyinInitials": [
       "yw",
-      "xss",
+      "ss",
       "bmd"
     ]
   },
@@ -2912,7 +2912,9 @@ window.OPERATOR_SEARCH_INDEX = {
       "叔叔",
       "牢玛",
       "玛头",
-      "黄色鸟笼"
+      "黄色鸟笼",
+      "马头",
+      "老玛"
     ],
     "pinyinFull": [
       "maenna",
@@ -3474,18 +3476,15 @@ window.OPERATOR_SEARCH_INDEX = {
   },
   "老鲤": {
     "aliases": [
-      "我吃两碗",
-      "海星超人"
+      "我吃两碗"
     ],
     "pinyinFull": [
       "laoli",
-      "wochiliangwan",
-      "haixingchaoren"
+      "wochiliangwan"
     ],
     "pinyinInitials": [
       "ll",
-      "wclw",
-      "hxcr"
+      "wclw"
     ]
   },
   "耶拉": {
@@ -4049,16 +4048,12 @@ window.OPERATOR_SEARCH_INDEX = {
     ]
   },
   "赤刃明霄陈": {
-    "aliases": [
-      "火陈"
-    ],
+    "aliases": [],
     "pinyinFull": [
-      "chirenmingxiaochen",
-      "huochen"
+      "chirenmingxiaochen"
     ],
     "pinyinInitials": [
-      "crmxc",
-      "hc"
+      "crmxc"
     ]
   },
   "赫德雷": {
@@ -4186,20 +4181,24 @@ window.OPERATOR_SEARCH_INDEX = {
       "罗神",
       "小罗",
       "Logos",
-      "李狗剩"
+      "李狗剩",
+      "罗哥",
+      "逻哥"
     ],
     "pinyinFull": [
       "luogesi",
       "luoshen",
       "xiaoluo",
       "logos",
-      "ligousheng"
+      "ligousheng",
+      "luoge"
     ],
     "pinyinInitials": [
       "lgs",
       "ls",
       "xl",
-      "logos"
+      "logos",
+      "lg"
     ]
   },
   "遥": {
@@ -4212,16 +4211,12 @@ window.OPERATOR_SEARCH_INDEX = {
     ]
   },
   "酒神": {
-    "aliases": [
-      "9神"
-    ],
+    "aliases": [],
     "pinyinFull": [
-      "jiushen",
-      "9shen"
+      "jiushen"
     ],
     "pinyinInitials": [
-      "js",
-      "9s"
+      "js"
     ]
   },
   "酸糖": {
@@ -4389,19 +4384,12 @@ window.OPERATOR_SEARCH_INDEX = {
     ]
   },
   "阿": {
-    "aliases": [
-      "庸医",
-      "内鬼"
-    ],
+    "aliases": [],
     "pinyinFull": [
-      "a",
-      "yongyi",
-      "neigui"
+      "a"
     ],
     "pinyinInitials": [
-      "a",
-      "yy",
-      "ng"
+      "a"
     ]
   },
   "阿兰娜": {
@@ -4489,18 +4477,15 @@ window.OPERATOR_SEARCH_INDEX = {
   },
   "陈": {
     "aliases": [
-      "陈sir",
-      "女游客C"
+      "陈sir"
     ],
     "pinyinFull": [
       "chen",
-      "chensir",
-      "nvyoukec"
+      "chensir"
     ],
     "pinyinInitials": [
       "c",
-      "csir",
-      "nykc"
+      "csir"
     ]
   },
   "陨星": {

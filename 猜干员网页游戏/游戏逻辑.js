@@ -10,7 +10,7 @@
     "next-button", "give-up-button", "feedback", "guesses-list", "result-screen",
     "result-kicker", "result-title", "result-subtitle", "result-score", "answer-name",
     "answer-meta", "evidence-list", "archive-link", "again-button", "record-summary",
-    "clear-record-button", "rarity-filter", "rarity-count",
+    "clear-record-button", "rarity-filter", "rarity-count", "recent-answer-list", "recent-answer-empty",
   ].map((id) => [id, $(id)]));
 
   if (!data || !Array.isArray(data.operators) || !Array.isArray(data.facts)) {
@@ -101,15 +101,34 @@
           recentSignatures: Array.isArray(saved.recentSignatures) ? saved.recentSignatures.slice(-240) : [],
           recentFacts: Array.isArray(saved.recentFacts) ? saved.recentFacts.slice(-160) : [],
           recentTopics: Array.isArray(saved.recentTopics) ? saved.recentTopics.slice(-80) : [],
+          completedAnswers: Array.isArray(saved.completedAnswers) ? saved.completedAnswers
+            .filter((entry) => entry && typeof entry.id === "string" && typeof entry.name === "string"
+              && entry.name.trim() && Number.isSafeInteger(entry.number) && entry.number > 0)
+            .slice(-5).map(({ id, name, number }) => ({ id, name, number })) : [],
         };
       }
     } catch (_) { /* 本地存储不可用时继续游玩。 */ }
-    return { plays: 0, points: 0, recentAnswers: [], recentSignatures: [], recentFacts: [], recentTopics: [] };
+    return { plays: 0, points: 0, recentAnswers: [], recentSignatures: [], recentFacts: [], recentTopics: [], completedAnswers: [] };
   }
 
   function saveRecord() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(record)); } catch (_) { /* 使用内存记录。 */ }
     ui["record-summary"].textContent = `已完成 ${record.plays} 局 · 总分 ${record.points}`;
+    renderRecentAnswers();
+  }
+
+  function renderRecentAnswers() {
+    ui["recent-answer-empty"].hidden = record.completedAnswers.length > 0;
+    ui["recent-answer-list"].hidden = record.completedAnswers.length === 0;
+    ui["recent-answer-list"].replaceChildren(...record.completedAnswers.slice().reverse().map((answer) => {
+      const item = document.createElement("li");
+      const number = document.createElement("span");
+      number.textContent = `第 ${answer.number} 题`;
+      const name = document.createElement("strong");
+      name.textContent = answer.name;
+      item.append(number, name);
+      return item;
+    }));
   }
 
   function seededRandom(seed) {
@@ -421,8 +440,10 @@
     const gained = correct ? 5 - round.stage : 0;
     record.plays++;
     record.points += gained;
-    saveRecord();
     const operator = data.operators[round.target];
+    record.completedAnswers.push({ id: operator.id, name: operator.name, number: record.plays });
+    record.completedAnswers = record.completedAnswers.slice(-5);
+    saveRecord();
     ui["result-kicker"].textContent = correct ? "目标已确认 / 档案解封" : "本局结束 / 档案解封";
     ui["result-title"].textContent = correct ? "猜中了。" : "答案揭晓。";
     ui["result-subtitle"].textContent = correct ? `在第 ${round.stage} 条线索阶段确认目标。` : "已放弃本题，答案与线索依据如下。";
@@ -482,7 +503,7 @@
   });
   ui["operator-search"].addEventListener("blur", () => setTimeout(hideSuggestions, 160));
   ui["clear-record-button"].addEventListener("click", () => {
-    record = { plays: 0, points: 0, recentAnswers: [], recentSignatures: [], recentFacts: [], recentTopics: [] };
+    record = { plays: 0, points: 0, recentAnswers: [], recentSignatures: [], recentFacts: [], recentTopics: [], completedAnswers: [] };
     saveRecord();
     ui["clear-record-button"].textContent = "已清除";
     setTimeout(() => { ui["clear-record-button"].textContent = "清除记录"; }, 1800);

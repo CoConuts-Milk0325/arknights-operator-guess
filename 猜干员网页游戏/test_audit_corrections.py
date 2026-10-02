@@ -162,6 +162,24 @@ class AuditCorrectionTests(unittest.TestCase):
             self.assertNotIn(fact_id, self.clues("塑心"))
             self.assertNotIn(fact_id, self.clues("石英"))
 
+    def test_physical_fragile_effect_is_separate_from_physical_damage_amplification(self):
+        profile = game.make_profile(self.records["百炼嘉维尔"])
+        facts = {fact[0]: fact for fact in game.facts_for(
+            profile, {profile["branch"]: {profile["rarity"]}})}
+        self.assertIn("debuff:physical_fragile_effect", facts)
+        effect = facts["debuff:physical_fragile_effect"]
+        self.assertEqual(effect[3], "能使敌人获得物理脆弱（仅物理伤害增加）")
+        self.assertIn("好锯多磨", effect[4])
+        self.assertIn("物理脆弱", effect[4])
+        for name in ("W", "慑砂", "艾拉", "铃兰", "琴柳", "塑心", "石英"):
+            with self.subTest(operator=name):
+                self.assertNotIn("debuff:physical_fragile_effect", self.clues(name))
+        for name in ("W", "慑砂", "艾拉", "铃兰", "琴柳", "百炼嘉维尔"):
+            with self.subTest(operator=name):
+                self.assertIn("debuff:physical_fragile", self.clues(name))
+        self.assertIn("debuff:physical_fragile", game.implied_fact_ids(
+            "debuff:physical_fragile_effect"))
+
     def test_every_explicit_elemental_fragile_source_is_indexed(self):
         profiles = [game.make_profile(record) for record in self.records.values()]
         expected = set()

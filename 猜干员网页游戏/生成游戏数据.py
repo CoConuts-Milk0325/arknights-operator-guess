@@ -362,7 +362,7 @@ SKILL_TEXT_FACTS = (
      r"(?:自身|干员的)生命值(?:始终)?不会低于1|不会被击倒"),
     ("survival:invincible", "生存", "survival_last_stand", "有技能可以获得无敌状态",
      r"(?:自身|自己).{0,20}无敌|(?:获得|进入)无敌(?:状态|效果)|(?:无法行动且)?不受到伤害"),
-    ("survival:status_immunity", "生存", "status_resist", "有技能可以免疫异常状态或控制效果",
+    ("survival:status_immunity", "生存", "status_resist", "有技能可以免疫异常状态",
      r"(?:自身)?免疫.{0,15}(?:异常状态|控制状态|控制效果|晕眩|寒冷|冻结|沉睡|停顿|束缚)"),
     ("skill:floating_unit", "召唤", "deployable_kind", "有技能会释放浮游单元攻击敌人",
      r"释放浮游单元(?:随机)?锁定.{0,25}(?:进行)?攻击"),
@@ -1354,12 +1354,19 @@ def facts_for(profile: dict, branch_rarities: dict[str, set[int]]) -> list[tuple
     all_damage = set().union(*(x["damage"] for x in configs))
     all_control = set().union(*(x["control"] for x in configs))
     all_sources = [(label, phrase) for x in configs for label, phrase in x["sources"]]
-    # 普通脆弱与物理、法术、元素专属脆弱分开；天赋和模组也可施加这些效果。
+    # 独立的物理脆弱词条只收录明确写出该效果的资料；泛用脆弱和旧式物理增伤另计。
+    physical_fragile = next(((label, phrase) for label, phrase in all_sources
+                             if "物理脆弱" in phrase), None)
+    if physical_fragile:
+        add("debuff:physical_fragile_effect", "削弱", "debuff_fragile_kind",
+            "能使敌人获得物理脆弱（仅物理伤害增加）",
+            f"{physical_fragile[0]}：{compact(physical_fragile[1])}")
+    # 脆弱与物理、法术、元素专属脆弱分开；天赋和模组也可施加这些效果。
     generic_fragile = next(((label, phrase) for label, phrase in all_sources
                             if re.search(r"(?<!物理)(?<!法术)(?<!元素)脆弱|(?:敌人|敌方|敌军|目标).{0,20}受到的伤害(?:增加|提高|提升|\+)", phrase)), None)
     if generic_fragile:
         add("debuff:fragile", "削弱", "debuff_fragile",
-            "能使敌人获得普通脆弱（物理、法术、真实伤害增加）",
+            "能使敌人获得脆弱（物理、法术、真实伤害增加）",
             f"{generic_fragile[0]}：{compact(generic_fragile[1])}")
     for kind, label in (("physical", "物理"), ("arts", "法术"), ("elemental", "元素")):
         specific = next(((source, phrase) for source, phrase in all_sources
@@ -1569,23 +1576,23 @@ def facts_for(profile: dict, branch_rarities: dict[str, set[int]]) -> list[tuple
     # 移速数值削弱属于 debuff:move_speed，不增加或阻断异常状态/位移的控制计数。
     control_complete = summon_damage_control_complete and "elemental" not in all_damage
     if not all_control and control_complete:
-        add("control:none", "控制", "control", "没有异常状态或位移控制",
+        add("control:none", "异常状态与位移", "control", "无法造成异常状态或位移效果",
             "普通攻击、全部技能、天赋和专属模组中未发现对敌方施加异常状态或位移；移速数值削弱另计")
     elif len(all_control) == 1 and control_complete:
         label = next(iter(all_control))
-        add("control:one", "控制", "control", "具备一种类型的控制效果",
+        add("control:one", "异常状态与位移", "control", "可造成一种类型的异常状态或位移效果",
             f"全部合法配置仅发现：{CONTROL_NAMES[label][0]}")
     elif 2 <= len(all_control) <= 3 and control_complete:
         labels = "、".join(CONTROL_NAMES[code][0] for code in sorted(all_control))
-        add(f"control:exact:{len(all_control)}", "控制", "control",
-            f"具备{len(all_control)}种类型的控制效果", f"全部合法配置中包含：{labels}")
+        add(f"control:exact:{len(all_control)}", "异常状态与位移", "control",
+            f"可造成{len(all_control)}种类型的异常状态或位移效果", f"全部合法配置中包含：{labels}")
     elif len(all_control) == 4 and control_complete:
         labels = "、".join(CONTROL_NAMES[code][0] for code in sorted(all_control))
-        add("control:exact:4", "控制", "control",
-            "具备四种类型的控制效果", f"全部合法配置中包含：{labels}")
+        add("control:exact:4", "异常状态与位移", "control",
+            "可造成四种类型的异常状态或位移效果", f"全部合法配置中包含：{labels}")
     for code in sorted(all_control):
         label = CONTROL_NAMES[code][0]
-        add(f"control:can:{code}", "控制", "control", f"可对敌人施加{label}效果",
+        add(f"control:can:{code}", "异常状态与位移", "control", f"可对敌人施加{label}效果",
             next((f"{source}：{compact(phrase)}" for source, phrase in all_sources
                   if code in control_types([(source, phrase)])), "技能或天赋"))
     for skill in profile["skills"]:
@@ -1618,12 +1625,12 @@ def facts_for(profile: dict, branch_rarities: dict[str, set[int]]) -> list[tuple
             if any({left, right} <= group for group in exclusive_groups):
                 continue
             add(f"combo:skill_two_controls:{left}:{right}", "复合", "skill_two_controls",
-                f"同一技能可以施加{CONTROL_NAMES[left][0]}和{CONTROL_NAMES[right][0]}两种控制",
+                f"同一技能可以施加{CONTROL_NAMES[left][0]}和{CONTROL_NAMES[right][0]}两种效果",
                 f"同一技能「{skill['name']}」（最高等级）：{compact(skill['text'])}")
         if true_aoe([(f"技能「{skill['name']}」", skill["text"])]):
             for control_code in sorted(skill_control):
                 add(f"combo:aoe_control:{control_code}", "复合", "aoe_control",
-                    f"有技能兼具真群攻与{CONTROL_NAMES[control_code][0]}控制",
+                    f"有技能兼具真群攻与{CONTROL_NAMES[control_code][0]}效果",
                     f"同一技能「{skill['name']}」（最高等级）：{compact(skill['text'])}")
     linked = audited.get("skill_talent_aoe_stun")
     if linked:
@@ -1634,19 +1641,19 @@ def facts_for(profile: dict, branch_rarities: dict[str, set[int]]) -> list[tuple
                               and "晕眩" in phrase), None)
         if linked_skill and linked_talent:
             add("combo:aoe_control:stun", "复合", "aoe_control",
-                "有技能兼具真群攻与晕眩控制",
+                "有技能兼具真群攻与晕眩效果",
                 f"技能「{linked_skill['name']}」：{compact(linked_skill['text'])}；"
                 f"触发天赋「{linked[1]}」：{compact(linked_talent)}")
     if len(all_damage) == 1 and not all_control and control_complete:
         add("combo:one_damage_no_control", "复合", "damage_control_combo",
-            "仅能造成一种类型的伤害，且没有异常状态或位移控制",
-            f"所有技能及模组配置均只产生{DAMAGE_NAMES[next(iter(all_damage))]}伤害，无异常状态或位移控制")
+            "仅能造成一种类型的伤害，且无法造成异常状态或位移效果",
+            f"所有技能及模组配置均只产生{DAMAGE_NAMES[next(iter(all_damage))]}伤害，无异常状态或位移效果")
     if len(all_damage) == 2 and len(all_control) == 1 and control_complete:
         damage_labels = "、".join(DAMAGE_NAMES[code] for code in sorted(all_damage))
         control_label = CONTROL_NAMES[next(iter(all_control))][0]
         add("combo:two_damage_one_control", "复合", "damage_control_combo",
-            "可造成两种伤害类型与一种控制效果",
-            f"普通攻击、全部技能、天赋及专属模组：{damage_labels}伤害；{control_label}控制")
+            "可造成两种伤害类型与一种异常状态或位移效果",
+            f"普通攻击、全部技能、天赋及专属模组：{damage_labels}伤害；{control_label}效果")
 
     aoe = true_aoe(all_sources)
     if aoe or audited.get("true_aoe"):
@@ -2054,6 +2061,8 @@ def implied_fact_ids(key: str) -> list[str]:
         implied.add("attack:extra_arts")
     elif key == "target:normal_air_priority":
         implied.add("air:normal_attack")
+    elif key == "debuff:physical_fragile_effect":
+        implied.add("debuff:physical_fragile")
     return sorted(implied)
 
 
@@ -2221,7 +2230,7 @@ def render_markdown_catalog(released: dict) -> str:
     by_family = defaultdict(list)
     for fact in facts:
         by_family[fact["family"]].append(fact)
-    order = ("目标", "攻击", "阻挡", "范围", "伤害", "控制", "复合", "削弱", "恢复",
+    order = ("目标", "攻击", "阻挡", "范围", "伤害", "异常状态与位移", "复合", "削弱", "恢复",
              "生存", "支援", "召唤", "部署", "天赋", "技能", "数值", "统计")
     ordered = [fact for family in order for fact in by_family.get(family, [])]
     numbered = {fact["id"]: i for i, fact in enumerate(ordered, 1)}
@@ -2294,7 +2303,7 @@ def write_catalog(profiles: list[dict], facts: list[dict], released: dict) -> No
              f"干员：{len(profiles)} 人；事实：{len(facts)} 条；分类：{len(by_family)} 种",
              "由 生成游戏数据.py 根据 事实索引.js 同一批事实自动生成。",
              "满足干员列出确认成员；唯一性校验还会考虑 possibleMembers 中的待核对成员。", ""]
-    order = ("目标", "攻击", "阻挡", "范围", "伤害", "控制", "复合", "削弱", "恢复",
+    order = ("目标", "攻击", "阻挡", "范围", "伤害", "异常状态与位移", "复合", "削弱", "恢复",
              "生存", "支援", "召唤", "部署", "天赋", "技能", "数值", "统计")
     number = 0
     for family in order:
@@ -2353,7 +2362,7 @@ def main() -> None:
         missing = "、".join(profile["name"] for index, profile in enumerate(profiles) if index not in fallback)
         raise ValueError(f"有干员无法组成唯一的四线索题目，拒绝发布不完整答案池：{missing}")
     released = {
-        "version": f"{data['资料说明'].get('来源提交') or 'local'}:{hashlib.sha256(raw).hexdigest()[:12]}:semantic-50",
+        "version": f"{data['资料说明'].get('来源提交') or 'local'}:{hashlib.sha256(raw).hexdigest()[:12]}:semantic-53",
         "operators": [{key: item[key] for key in ("id", "name", "profession", "rarity", "archive")} for item in profiles],
         "facts": facts, "byOperator": by_operator, "fallback": fallback,
     }
