@@ -13,6 +13,7 @@ import random
 import re
 from itertools import combinations
 from collections import defaultdict
+from functools import lru_cache
 from pathlib import Path
 
 
@@ -171,7 +172,7 @@ CONTROL_NAMES = {
     "stun": ("晕眩",), "slow": ("停顿",), "root": ("束缚",),
     "freeze": ("冻结",), "cold": ("寒冷",), "sleep": ("沉睡",),
     "levitate": ("浮空",), "silence": ("沉默", "失去特殊能力", "特殊能力失效"), "disarm": ("缴械",),
-    "fear": ("恐惧",), "tremble": ("战栗",), "push": ("推开", "推力", "推动", "击退", "弹开"),
+    "fear": ("恐惧",), "tremble": ("战栗",), "palsy": ("麻痹",), "push": ("推开", "推力", "推动", "击退", "弹开"),
     "pull": ("拉拽", "拖拽", "牵引"), "teleport": ("传送",),
 }
 SURVIVAL = {
@@ -553,11 +554,72 @@ def sources_for(profile: dict, module: dict, skill: dict | None) -> list[tuple[s
     return sources
 
 
+def skill_linked_effect(phrase: str, attacks: bool) -> str | None:
+    """按触发事件截取效果，避免一条来源中的独立反伤、周期光环混入。"""
+    selected = []
+    attack_event = (r"(?<!受到)攻击(?:时|使|附带|会|额外|造成)|"
+                    r"(?<!受到)攻击(?!力|速度|间隔|范围|距离)[^，,；。]{0,25}额外造成|造成伤害时")
+    for sentence in re.split(r"[；;。\n]", phrase):
+        active = False
+        for clause in re.split(r"[，,]|(?:并且|并|且)(?=攻击时|受到攻击时|部署时)", sentence):
+            event = re.search(attack_event, clause)
+            if re.search(r"未开启技能时|未开启技能|技能未开启", clause):
+                active = False
+            elif re.search(r"(?<!未)开启技能时|技能开启时", clause):
+                active = True
+            elif event:
+                subject = clause[:event.start()]
+                active = attacks and not re.search(
+                    r"(?:敌人|敌方|友方|我方|友军|其他干员|召唤物)[^，,；。]{0,20}$", subject)
+            elif re.search(r"受到.{0,15}攻击时|部署(?:时|后)|击(?:杀|倒).{0,20}(?:时|后)|"
+                           r"^(?:每秒|每\d+(?:\.\d+)?秒)", clause) and not (
+                               active and re.match(r"每秒受到", clause)):
+                active = False
+            if active:
+                selected.append(clause)
+    return "，".join(selected) if selected else None
+
+
+def skill_effect_sources(profile: dict, module: dict, skill: dict) -> tuple[list[tuple[str, str]], bool]:
+    """仅组合所选技能保留的攻击形态及明确触发的天赋／模组，不能跨配置拼接。"""
+    text = skill["text"]
+    attacks = (not re.search(r"停止攻击|不(?:进行普通)?攻击", text)
+               and bool(re.search(
+                   r"(?:下次|下一次|每次|普通|同时|额外)攻击|攻击(?:变为|改为|时|使|会|造成)|"
+                   r"攻击(?:力|速度|间隔|距离|范围)(?:扩大|增大|增加|提升|提高|缩短|减小|从\+|\+)", text)))
+    if (re.search(r"(?:下次|下一次|每次|普通)攻击[^，,；。]{0,20}(?:恢复|回复|治疗)", text)
+            and direct_heal_source([("技能", text)], require_other=True)
+            and not any(deals_typed_damage(text, label) for label in DAMAGE_NAMES.values())):
+        attacks = False  # 该次普通攻击被友方治疗替换。
+    sources = [(f"技能「{skill['name']}」", text)]
+    linked = AUDITED.get(profile["id"], {}).get("skill_talent_aoe_stun")
+    inherited = sources_for(profile, module, None)
+    for label, phrase in inherited:
+        is_trait = label == "特性"
+        triggered = skill_linked_effect(phrase, attacks)
+        attack_module = label.startswith("模组") and bool(re.search(
+            r"^攻击造成|^对攻击范围内所有敌人造成|普通攻击|攻击对目标周围", phrase))
+        referenced = any(name in text or f"第{['一', '二', '三'][index]}天赋" in text
+                         for index, (name, _) in enumerate(profile["talents"][:3])
+                         if f"「{name}」" in label)
+        audited_link = bool(linked and skill["name"] == linked[0] and f"「{linked[1]}」" in label)
+        if (attacks and (is_trait or attack_module)) or triggered or referenced or audited_link:
+            # 技能明确改为有限目标时，不能继承特性的全范围攻击形态。
+            if (is_trait or attack_module) and true_aoe([(label, phrase)]) and re.search(
+                    r"(?:同时|优先)攻击(?:最多|至多)?[\d一二三四五六七八九十]+(?:名|个)|随机攻击|攻击变为单体", text):
+                continue
+            sources.append((label, phrase if is_trait or referenced or audited_link else (triggered or phrase)))
+    return sources, attacks
+
+
 def deals_typed_damage(phrase: str, label: str) -> bool:
     """伤害词必须描述出手，而非吸收、抵挡、减免或单纯承受伤害。"""
     for sentence in re.split(r"[；;。\n]", phrase):
         clauses = re.split(r"[，,]", sentence)
         for index, clause in enumerate(clauses):
+            # 他人的伤害是触发条件时，只算本能力追加的伤害。
+            clause = re.sub(rf"(?:其他)?(?:友方|我方|友军)[^，,；。]{{0,45}}造成[^，,；。]{{0,25}}{label}伤害时",
+                            "触发条件满足时", clause)
             # 技能代价给自己或友方造成伤害，不表示能伤害敌人。
             if re.search(rf"(?:对自身|对自己|对友方|对我方).{{0,18}}造成.{{0,25}}{label}伤害|"
                          rf"(?:自身|自己|友方|我方).{{0,15}}受到.{{0,25}}{label}伤害", clause):
@@ -565,7 +627,7 @@ def deals_typed_damage(phrase: str, label: str) -> bool:
                     continue
             if re.search(rf"伤害类型变为{label}|攻击(?:改为|变为).{{0,35}}{label}伤害", clause):
                 return True
-            if re.search(rf"(?:造成|附带|附加|引爆|转化为).{{0,90}}{label}伤害", clause):
+            if re.search(rf"(?:造成(?!的)|附带|附加|引爆|转化为).{{0,90}}{label}伤害", clause):
                 return True
             if re.search(rf"(?:敌人|敌方|目标).{{0,90}}受到.{{0,90}}{label}伤害", clause):
                 return True
@@ -589,6 +651,21 @@ def inflicts_elemental_loss(phrase: str, kind: str | None = None) -> bool:
         if re.search(rf"(?:敌人|敌方|目标).{{0,55}}受到(?!的).{{0,25}}{loss}损伤", clause):
             return True
     return False
+
+
+def attack_replacement_types(text: str) -> set[str]:
+    result = set()
+    for sentence in re.split(r"[；;。\n]", text):
+        for code, label in DAMAGE_NAMES.items():
+            if re.search(rf"攻击(?:变为|改为)[^，,；。]{{0,25}}{label}伤害|伤害类型变为{label}|"
+                         rf"(?:普通|每次|下次|下一次)?攻击(?:对[^，,；。]{{0,25}})?造成[^，,；。]{{0,25}}{label}伤害",
+                         sentence):
+                result.add(code)
+            elif (re.search(r"(?:下次|下一次)攻击|攻击(?:变为|改为)(?![\d一二三四五六七八九十]+连击)", sentence)
+                  and not re.search(r"额外.{0,12}(?:造成|伤害)|附加|附带", sentence)
+                  and deals_typed_damage(sentence, label)):
+                result.add(code)
+    return result
 
 
 def deals_weakpoint_damage(phrase: str) -> bool:
@@ -630,6 +707,9 @@ def damage_types(profile: dict, sources: list[tuple[str, str]]) -> set[str]:
 def control_types(sources: list[tuple[str, str]]) -> set[str]:
     result = set()
     for _, phrase in sources:
+        # 敌方神经损伤爆发产生麻痹；我方受损伤后的晕眩不能套给敌人。
+        if inflicts_elemental_loss(phrase, "神经"):
+            result.add("palsy")
         # PRTS：对敌人连续施加两层寒冷会触发冻结；例如灵知「零度爆发」蓄力。
         if (re.search(r"(?:敌人|敌方|目标).{0,25}造成.{0,12}寒冷", phrase)
                 and "额外造成一层寒冷" in phrase):
@@ -681,6 +761,15 @@ def control_types(sources: list[tuple[str, str]]) -> set[str]:
                     result.add(code)
                     break
     return result
+
+
+def elemental_control_complete(sources: list[tuple[str, str]]) -> bool:
+    """纯元素伤害不等于控制；未标明类型的损伤仍不能证明控制盘点完整。"""
+    for _, phrase in sources:
+        # 一段已知损伤不能替另一项未标明类型的损伤证明完整性。
+        if inflicts_elemental_loss(phrase, "元素"):
+            return False
+    return True
 
 
 def ally_effect(sources: list[tuple[str, str]], terms: dict, require_multi: bool = False,
@@ -803,12 +892,82 @@ def ally_effect(sources: list[tuple[str, str]], terms: dict, require_multi: bool
     return None
 
 
+def direct_heal_source(sources: list[tuple[str, str]], require_other: bool = False) -> tuple[str, str] | None:
+    """正向和否定线索共享分类；受体未明仅阻断否定，不证明友方治疗。"""
+    for label, phrase in sources:
+        for clause in re.split(r"[，,；;。\n]", phrase):
+            for match in re.finditer(r"治疗|恢复|回复", clause):
+                before, after = clause[:match.start()], clause[match.end():]
+                if re.search(r"(?:无法|不能|不被|不成为).{0,14}$|(?:不|不进行)$|受到的?$|接受的?$", before):
+                    continue
+                if re.match(r"(?:效果|量|和回复效果).{0,10}(?:提高|提升|降低|增加|减少|\+|-)", after):
+                    continue
+                if re.search(r"元素损伤|(?:神经|灼燃|侵蚀|凋亡)损伤", after):
+                    continue
+                if match.group() != "治疗" and not re.search(r"生命", after):
+                    continue
+                # 每秒治疗仍是治疗行为；每秒回复生命或生命回复速度属于缓回。
+                if match.group() != "治疗" and re.search(r"每秒|持续|生命回复速度", before):
+                    continue
+                if re.match(r"(?:自身|自己)", after):
+                    continue
+                recipient = re.search(
+                    r"友方|我方|友军|其他(?:干员|单位)|"
+                    r"(?:范围内|周围|附近|场上|场外).{0,15}干员|"
+                    r"(?:为|治疗).{0,15}(?:干员|单位)|为目标|使目标|"
+                    r"(?:该)?干员.{0,35}(?:恢复|回复|治疗)", clause)
+                if not recipient and (re.search(r"自身|自己", before)
+                                      or re.search(r"(?:击杀|击倒).{0,25}(?:回复|恢复)", phrase)
+                                      or re.search(r"每次攻击|造成伤害|攻击时", before)):
+                    continue
+                if not require_other or recipient:
+                    return label, compact(clause)
+    return None
+
+
 def direct_heal(sources: list[tuple[str, str]]) -> bool:
-    for _, phrase in sources:
-        for clause in re.split(r"[；;。\n]", phrase):
-            if ("治疗" in clause or re.search(r"(?:恢复|回复).{0,8}生命", clause)) and not re.search(r"(?:每秒|生命回复速度|持续恢复)", clause):
-                return True
-    return False
+    return direct_heal_source(sources) is not None
+
+
+@lru_cache(maxsize=1)
+def healing_restricted_recipients() -> tuple[dict, ...]:
+    """从资料快照提取受治疗限制的本体与傀儡师替身，以及它们的受众标签。"""
+    records = json.loads(SOURCE.read_text(encoding="utf-8"))["干员"].values()
+    result = []
+    for record in records:
+        basic = record["形态资料"][record["形态ID列表"][0]]["干员基础数据"]
+        branch = basic.get("职业分支编号")
+        if not (re.search(r"无法被.{0,12}治疗|不成为.{0,12}治疗目标", clean(basic.get("描述")))
+                or branch == "dollkeeper"):
+            continue
+        faction_records = [basic, *(basic.get("其他所属势力") or [])]
+        factions = {entry.get(key) for entry in faction_records
+                    for key in ("所属国家编号", "所属组织编号", "所属队伍编号") if entry.get(key)}
+        result.append({"name": record["干员名称"], "profession": basic.get("职业"),
+                       "branch": branch, "factions": factions})
+    return tuple(result)
+
+
+def regen_recipient_status(phrase: str) -> bool | None:
+    """限定职业／阵营的缓回必须能覆盖实际受治疗限制对象；未知标签保留待定。"""
+    scopes = re.findall(r"【([^】]+)】(?:干员|单位)[^，,；;。]{0,18}(?:每秒(?:回复|恢复)|生命回复速度)", phrase)
+    if not scopes:
+        return True
+    professions = {"先锋", "近卫", "重装", "狙击", "术师", "医疗", "辅助", "特种"}
+    branch_ids = {name: key for key, name in BRANCH_NAMES.items()}
+    # 本地原始势力 ID abyssal 对应深海猎人；其傀儡师替身也受治疗限制。
+    faction_ids = {"深海猎人": "abyssal"}
+    unknown = False
+    for scope in scopes:
+        if scope not in professions and scope not in branch_ids and scope not in faction_ids:
+            unknown = True
+            continue
+        if any((scope in professions and target["profession"] == scope)
+               or (scope in branch_ids and target["branch"] == branch_ids[scope])
+               or (scope in faction_ids and faction_ids[scope] in target["factions"])
+               for target in healing_restricted_recipients()):
+            return True
+    return None if unknown else False
 
 
 def own_regen(sources: list[tuple[str, str]]) -> tuple[str, str] | None:
@@ -842,7 +1001,8 @@ def own_regen(sources: list[tuple[str, str]]) -> tuple[str, str] | None:
 def true_aoe(sources: list[tuple[str, str]]) -> tuple[str, str] | None:
     area_target = (r"(?:所有(?:地面|空中)?(?:敌人|目标)|全部(?:地面|空中)?(?:敌人|目标)|"
                    r"(?:周围|附近)(?:的)?(?:所有|全部|其他)?(?:地面|空中)?(?:敌人|目标)|"
-                   r"(?:该)?目标周围的(?:所有|全部)(?:地面|空中)?敌军)")
+                   r"(?:该)?目标周围的(?:所有|全部)(?:地面|空中)?敌军|"
+                   r"(?:围绕区域内|区域内|结界内)(?:的)?(?:所有|全部)?(?:地面|空中)?(?:敌人|目标))")
     for label, phrase in sources:
         # 扩散术师与炮手的普通攻击是命中点溅射，半径内敌人均会受伤。
         if label == "特性" and phrase in {"攻击造成群体法术伤害", "攻击造成群体物理伤害"}:
@@ -851,29 +1011,34 @@ def true_aoe(sources: list[tuple[str, str]]) -> tuple[str, str] | None:
         # PRTS 轰击术师分支明确写着「普通攻击同时攻击范围内的所有敌人」。
         if label == "特性" and phrase == "攻击造成超远距离的群体法术伤害":
             return label, "轰击术师：普通攻击同时攻击范围内的所有敌人"
-        for clause in re.split(r"[；;。\n]", phrase):
+        for sentence in re.split(r"[；;。\n]", phrase):
+            area_recipient = False
+            for clause in re.split(r"[，,]", sentence):
             # 「阻挡的所有敌人」有限定条件，是假群攻；不能只看到「所有」就计入真群攻。
-            if (re.search(r"(?:阻挡|被阻挡|攻击到|命中|锁定|冻结).{0,12}所有(?:地面|空中)?(?:敌人|目标)", clause)
-                    or "随机攻击" in clause):
-                continue
-            area_damage = re.search(rf"{area_target}.{{0,25}}(?:造成|受到).{{0,40}}伤害", clause)
-            if area_damage and re.search(
-                    r"(?:造成|受到)的|伤害(?:提高|提升|增加|加深|减免|降低|\+)|"
-                    r"受到.{0,30}攻击时|(?:自身|技能结束).{0,30}受到|"
-                    r"共造成\d+次", area_damage.group()):
-                area_damage = None  # 后文改述友方攻击或自身受伤，不是这些敌人受到群伤。
+                if (re.search(r"(?:阻挡|被阻挡|攻击到|命中|锁定|冻结).{0,12}所有(?:地面|空中)?(?:敌人|目标)", clause)
+                        or "随机攻击" in clause):
+                    area_recipient = False
+                    continue
+                explicit_area = re.search(area_target, clause)
+                if explicit_area:
+                    area_recipient = True
+                elif re.search(r"友方|我方|友军|自身|自己|召唤物|装置|"
+                               r"(?:一|1|单个|单名|该|当前)(?:名|个)?(?:敌人|目标)|主目标|攻击目标", clause):
+                    area_recipient = False
+                # 目标可在前一分句，伤害可在削弱效果之后；受体切换时停止继承。
+                damage_action = next((match for match in re.finditer(
+                    r"(?:造成|受到)(?!的)[^，,；;。]{0,55}?伤害(?!提高|提升|增加|加深|减免|降低|\+)",
+                    clause[explicit_area.end():] if explicit_area else clause)
+                    if not re.search(r"受到.{0,30}攻击时|共造成\d+次", match.group())), None)
             # “对目标及其周围造成伤害”与“对目标周围造成溅射伤害”
             # 均是无人数上限的范围伤害；“周围最多3名敌人”不符合。
-            splash_damage = re.search(
-                r"对(?:该)?目标(?:及其|和其|与其)?周围(?:的(?:敌人|敌军))?"
-                r"造成[^，,；;。]{0,40}伤害", clause)
-            if (area_damage
-                    or splash_damage
-                    or re.search(rf"对.{{0,45}}{area_target}造成.{{0,70}}伤害", clause)
-                    or re.search(rf"对.{{0,35}}{area_target}.{{0,15}}(?:进行(?:一次|多次)?攻击|发动.{{0,12}}斩击|使用.{{0,12}}切割|射击)", clause)
+                splash_target = re.search(
+                    r"对(?:该)?目标(?:及其|和其|与其)?周围(?:的(?:敌人|敌军))?造成(?!的)", clause)
+                if ((area_recipient or splash_target) and damage_action
+                        or re.search(rf"对.{{0,35}}{area_target}.{{0,15}}(?:进行(?:一次|多次)?攻击|发动.{{0,12}}斩击|使用.{{0,12}}切割|射击)", clause)
                     # 散射手的分支特性省略了谓语「攻击」，但特性确实攻击范围内全部敌人。
-                    or (label == "特性" and clause.startswith("攻击范围内的所有敌人，"))):
-                return label, compact(phrase)
+                        or (label == "特性" and clause == "攻击范围内的所有敌人")):
+                    return label, compact(phrase)
     return None
 
 
@@ -1256,6 +1421,9 @@ def enemy_dot_source(sources: list[tuple[str, str]]) -> tuple[str, str] | None:
                 match = periodic_damage.search(clause) or sustained_damage.search(clause)
                 if not match:
                     continue
+                # 周期性现身／主动选取一个目标攻击不属于附着状态或持续区域伤害。
+                if re.search(r"每(?:隔)?\d*(?:\.\d+)?秒[^，,；;。]{0,35}(?:现身|对(?:一|1)名敌人|发动.{0,12}攻击)", clause):
+                    continue
                 preceding = clause[:match.start()]
                 if match.group("verb") == "受到":
                     # “友方每秒受到敌人造成的伤害”中的敌人是施害者。
@@ -1574,7 +1742,7 @@ def facts_for(profile: dict, branch_rarities: dict[str, set[int]]) -> list[tuple
         add(f"damage:only:{code}", "伤害", "damage", f"只能造成{DAMAGE_NAMES[code]}伤害",
             f"普通攻击、技能、天赋和所有模组配置均已盘点：仅有{DAMAGE_NAMES[code]}伤害")
     # 移速数值削弱属于 debuff:move_speed，不增加或阻断异常状态/位移的控制计数。
-    control_complete = summon_damage_control_complete and "elemental" not in all_damage
+    control_complete = summon_damage_control_complete and elemental_control_complete(all_sources)
     if not all_control and control_complete:
         add("control:none", "异常状态与位移", "control", "无法造成异常状态或位移效果",
             "普通攻击、全部技能、天赋和专属模组中未发现对敌方施加异常状态或位移；移速数值削弱另计")
@@ -1595,26 +1763,46 @@ def facts_for(profile: dict, branch_rarities: dict[str, set[int]]) -> list[tuple
         add(f"control:can:{code}", "异常状态与位移", "control", f"可对敌人施加{label}效果",
             next((f"{source}：{compact(phrase)}" for source, phrase in all_sources
                   if code in control_types([(source, phrase)])), "技能或天赋"))
-    for skill in profile["skills"]:
+    for config in configs:
+        skill = config["skill"]
+        if skill is None:
+            continue
+        effect_sources, attacks = skill_effect_sources(profile, config["module"], skill)
+        effect_text = "；".join(f"{source}：{compact(phrase)}" for source, phrase in effect_sources)
+        conversions = attack_replacement_types(skill["text"])
+        if not conversions:
+            conversions = set().union(*(attack_replacement_types(phrase) for source, phrase in effect_sources
+                                        if source != "特性" and not source.startswith("技能")))
+        damage_sources = [(source, phrase) for source, phrase in effect_sources
+                          if not (conversions and (source == "特性"
+                                  or (source.startswith("模组") and re.match(r"^攻击造成", phrase))))]
         skill_damage = {code for code, label in DAMAGE_NAMES.items()
-                        if deals_typed_damage(skill["text"], label)
-                        or (code == "elemental" and inflicts_elemental_loss(skill["text"]))}
+                        if any(deals_typed_damage(phrase, label)
+                               or (code == "elemental" and inflicts_elemental_loss(phrase))
+                               for _, phrase in damage_sources)}
+        if attacks:
+            normal = damage_types(profile, [("特性", profile["trait"])])
+            if conversions:
+                normal = conversions
+            elif profile["branch"] == "artsprotector":
+                normal = {"arts"}  # 术技卫士技能期间普攻为法术。
+            skill_damage.update(normal)
         inherited = audited.get("skill_inherited_damage", {}).get(skill["name"])
         if inherited:
             # 该技能仍按普通攻击类型造成伤害，短描述只列额外的控制效果。
             skill_damage.add(inherited)
         if deals_weakpoint_damage(skill["text"]):
             skill_damage.update(("physical", "arts"))
-        skill_control = control_types([(f"技能「{skill['name']}」", skill["text"])])
+        skill_control = control_types(effect_sources)
         for left, right in combinations(sorted(skill_damage), 2):
             add(f"combo:skill_two_damage:{left}:{right}", "复合", "skill_two_damage",
                 f"有技能既能造成{DAMAGE_NAMES[left]}伤害，也能造成{DAMAGE_NAMES[right]}伤害",
-                f"同一技能「{skill['name']}」（最高等级）：{compact(skill['text'])}")
+                f"同一技能与模组配置（最高等级）：{effect_text}")
         for damage_code in sorted(skill_damage):
             for control_code in sorted(skill_control):
                 add(f"combo:skill_damage_control:{damage_code}:{control_code}", "复合", "skill_damage_control",
                     f"有技能既能造成{DAMAGE_NAMES[damage_code]}伤害，也能施加{CONTROL_NAMES[control_code][0]}",
-                    f"同一技能「{skill['name']}」（最高等级）：{compact(skill['text'])}")
+                    f"同一技能与模组配置（最高等级）：{effect_text}")
         exclusive_groups = []
         for choice in re.finditer(r"随机施加以下任意一个状态[（(]([^）)]+)[）)]", skill["text"]):
             exclusive_groups.append({
@@ -1626,12 +1814,12 @@ def facts_for(profile: dict, branch_rarities: dict[str, set[int]]) -> list[tuple
                 continue
             add(f"combo:skill_two_controls:{left}:{right}", "复合", "skill_two_controls",
                 f"同一技能可以施加{CONTROL_NAMES[left][0]}和{CONTROL_NAMES[right][0]}两种效果",
-                f"同一技能「{skill['name']}」（最高等级）：{compact(skill['text'])}")
-        if true_aoe([(f"技能「{skill['name']}」", skill["text"])]):
+                f"同一技能与模组配置（最高等级）：{effect_text}")
+        if true_aoe(effect_sources):
             for control_code in sorted(skill_control):
                 add(f"combo:aoe_control:{control_code}", "复合", "aoe_control",
                     f"有技能兼具真群攻与{CONTROL_NAMES[control_code][0]}效果",
-                    f"同一技能「{skill['name']}」（最高等级）：{compact(skill['text'])}")
+                    f"同一技能与模组配置（最高等级）：{effect_text}")
     linked = audited.get("skill_talent_aoe_stun")
     if linked:
         linked_skill = next((s for s in profile["skills"] if s["name"] == linked[0]
@@ -1934,14 +2122,12 @@ def facts_for(profile: dict, branch_rarities: dict[str, set[int]]) -> list[tuple
                      "dodge": "能提高其他干员的闪避", "shield": "能为其他干员提供护盾或屏障",
                      "shelter": "能为其他干员提供受伤害降低（庇护）效果", "conceal": "能使其他干员获得迷彩或隐匿",
                      "max_hp": "能提高其他干员的生命上限", "resist_status": "能使其他干员获得【抵抗】状态（缩短异常状态时间）"}[survival_code], effect[1])
-    regen = own_regen(all_sources)
+    regen = next((found for source in all_sources if (found := own_regen([source]))
+                  and regen_recipient_status(source[1]) is True), None)
     if regen or audited.get("hunger_regen"):
         add("heal:hunger", "恢复", "regen", "能为无法被直接治疗的干员回复生命（缓回）",
             audited.get("hunger_regen") or f"{regen[0]}：{regen[1]}")
-    direct_other = next(((source, phrase) for source, phrase in all_sources
-                         if re.search(r"(?:恢复|回复|治疗).{0,20}(?:友方|我方|其他).{0,18}(?:干员|单位).{0,18}生命|"
-                                      r"(?:友方|我方|其他).{0,18}(?:干员|单位).{0,25}(?:恢复|回复|治疗).{0,20}生命", phrase)
-                         and not re.search(r"(?:每秒|生命回复速度|持续恢复).{0,20}生命", phrase)), None)
+    direct_other = direct_heal_source(all_sources, require_other=True)
     if not direct_other and profile["branch"] in HEALING_ATTACK_BRANCHES:
         branch_cn = BRANCH_NAMES.get(profile["branch"], profile["branch"])
         direct_other = ("特性", f"{branch_cn}分支特性：普通攻击为直接治疗友方目标")
@@ -2102,6 +2288,9 @@ def build_facts(profiles: list[dict]) -> tuple[list[dict], list[list[int]]]:
     possible_summon_members = {index for index, item in enumerate(profiles) if item["has_summons"]}
     unknown_summons = {index for index, item in enumerate(profiles)
                        if item["has_summons"] and not AUDITED.get(item["id"], {}).get("summon_no_damage_control")}
+    unknown_elemental_controls = {index for index, item in enumerate(profiles)
+        if not elemental_control_complete([source for module in item["modules"]
+            for skill in [None, *item["skills"]] for source in sources_for(item, module, skill)])}
     exhaustive_facts = {"damage:only_one", "damage:exact_two", "control:none", "control:one",
                         "combo:one_damage_no_control", "combo:two_damage_one_control"}
     for fact in useful:
@@ -2111,7 +2300,16 @@ def build_facts(profiles: list[dict]) -> tuple[list[dict], list[list[int]]]:
             fact["possibleMembers"] = [index for index in range(len(profiles)) if index not in known_air]
         elif fact["id"] in exhaustive_facts or fact["id"].startswith(("damage:only:", "control:exact:")):
             # 召唤物尚未审完时，不能把未产出排他事实当作明确不满足。
-            fact["possibleMembers"] = sorted(set(fact["members"]) | unknown_summons)
+            unknown = unknown_summons
+            if fact["id"].startswith("control:") or fact["id"].startswith("combo:"):
+                unknown = unknown | unknown_elemental_controls
+            fact["possibleMembers"] = sorted(set(fact["members"]) | unknown)
+        elif fact["id"] == "heal:hunger":
+            possible = {index for index, item in enumerate(profiles)
+                if any(own_regen([source]) and regen_recipient_status(source[1]) is None
+                    for module in item["modules"] for skill in [None, *item["skills"]]
+                    for source in sources_for(item, module, skill))}
+            fact["possibleMembers"] = sorted(set(fact["members"]) | possible)
         elif fact["id"] == "ally:output_multi":
             fact["possibleMembers"] = sorted(set(fact["members"]) |
                 set().union(*(possible_support_members[kind] for kind in OUTPUT_BUFF)) |
@@ -2362,7 +2560,7 @@ def main() -> None:
         missing = "、".join(profile["name"] for index, profile in enumerate(profiles) if index not in fallback)
         raise ValueError(f"有干员无法组成唯一的四线索题目，拒绝发布不完整答案池：{missing}")
     released = {
-        "version": f"{data['资料说明'].get('来源提交') or 'local'}:{hashlib.sha256(raw).hexdigest()[:12]}:semantic-53",
+        "version": f"{data['资料说明'].get('来源提交') or 'local'}:{hashlib.sha256(raw).hexdigest()[:12]}:semantic-54",
         "operators": [{key: item[key] for key in ("id", "name", "profession", "rarity", "archive")} for item in profiles],
         "facts": facts, "byOperator": by_operator, "fallback": fallback,
     }

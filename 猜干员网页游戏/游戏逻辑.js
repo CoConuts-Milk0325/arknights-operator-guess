@@ -11,6 +11,7 @@
     "result-kicker", "result-title", "result-subtitle", "result-score", "answer-name",
     "answer-meta", "evidence-list", "archive-link", "again-button", "record-summary",
     "clear-record-button", "rarity-filter", "rarity-count", "recent-answer-list", "recent-answer-empty",
+    "page-shell", "rarity-panel", "rarity-summary", "history-return-button", "history-notice", "evidence-heading",
   ].map((id) => [id, $(id)]));
 
   if (!data || !Array.isArray(data.operators) || !Array.isArray(data.facts)) {
@@ -43,6 +44,9 @@
   let selected = null;
   let suggestions = [];
   let highlighted = -1;
+  let screen = "intro";
+  let currentResult = null;
+  let historyView = null;
 
   function readRarities() {
     try {
@@ -88,6 +92,22 @@
       button.setAttribute("aria-pressed", String(selectedRarities.has(Number(button.dataset.rarity))));
     }
     ui["rarity-count"].textContent = `${rarityPool().length} 名可出题`;
+    ui["rarity-summary"].textContent = selectedRarities.size === rarities.length
+      ? "全部星级" : [...selectedRarities].sort((a, b) => a - b).join("、") + " 星";
+  }
+
+  function readResult(value) {
+    if (!value || typeof value.correct !== "boolean" || !Number.isInteger(value.stage)
+        || value.stage < 1 || value.stage > 4 || value.gained !== (value.correct ? 5 - value.stage : 0)
+        || !Number.isInteger(value.rarity) || value.rarity < 1 || value.rarity > 6
+        || typeof value.profession !== "string" || typeof value.archive !== "string"
+        || /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(value.archive)
+        || !Array.isArray(value.evidence) || value.evidence.length !== 4
+        || !value.evidence.every(item => item && [item.text, item.source, item.quote]
+          .every(field => typeof field === "string"))) return null;
+    return { correct: value.correct, stage: value.stage, gained: value.gained,
+      rarity: value.rarity, profession: value.profession, archive: value.archive,
+      evidence: value.evidence.map(({ text, source, quote }) => ({ text, source, quote })) };
   }
 
   function readRecord() {
@@ -104,7 +124,7 @@
           completedAnswers: Array.isArray(saved.completedAnswers) ? saved.completedAnswers
             .filter((entry) => entry && typeof entry.id === "string" && typeof entry.name === "string"
               && entry.name.trim() && Number.isSafeInteger(entry.number) && entry.number > 0)
-            .slice(-5).map(({ id, name, number }) => ({ id, name, number })) : [],
+            .slice(-5).map(({ id, name, number, result }) => ({ id, name, number, result: readResult(result) })) : [],
         };
       }
     } catch (_) { /* 本地存储不可用时继续游玩。 */ }
@@ -124,9 +144,15 @@
       const item = document.createElement("li");
       const number = document.createElement("span");
       number.textContent = `第 ${answer.number} 题`;
-      const name = document.createElement("strong");
+      const name = document.createElement("button");
+      name.type = "button";
+      name.className = "history-answer";
       name.textContent = answer.name;
-      item.append(number, name);
+      name.setAttribute("aria-label", `查看第 ${answer.number} 题 ${answer.name} 的${answer.result ? "结算详情" : "历史答案"}`);
+      name.addEventListener("click", () => showHistory(answer));
+      const hint = document.createElement("small");
+      hint.textContent = answer.result ? "查看结算" : "旧记录";
+      item.append(number, name, hint);
       return item;
     }));
   }
@@ -280,9 +306,12 @@
   }
 
   function showScreen(name) {
+    screen = name;
     ui["intro-screen"].hidden = name !== "intro";
     ui["game-screen"].hidden = name !== "game";
     ui["result-screen"].hidden = name !== "result";
+    if (name === "game") ui["page-shell"].classList.add("is-playing");
+    else ui["page-shell"].classList.remove("is-playing");
     window.scrollTo({ top: 0, behavior: "auto" });
   }
 
@@ -393,6 +422,15 @@
       ui["data-status"].textContent = "当前档案未能生成唯一题目";
       return;
     }
+    historyView = null;
+    currentResult = null;
+    ui["history-return-button"].hidden = true;
+    ui["again-button"].hidden = false;
+    if (!message) {
+      ui["rarity-panel"].open = false;
+      ui["rules-panel"].hidden = true;
+      ui["rules-toggle"].setAttribute("aria-expanded", "false");
+    }
     record.recentAnswers.push(data.operators[round.target].id);
     record.recentAnswers = record.recentAnswers.slice(-eligible.length);
     record.recentSignatures.push(round.signature);
@@ -441,32 +479,77 @@
     record.plays++;
     record.points += gained;
     const operator = data.operators[round.target];
-    record.completedAnswers.push({ id: operator.id, name: operator.name, number: record.plays });
+    currentResult = { id: operator.id, name: operator.name, number: record.plays,
+      result: { correct, stage: round.stage, gained, rarity: operator.rarity,
+        profession: operator.profession, archive: operator.archive,
+        evidence: round.facts.map(factIndex => {
+          const fact = data.facts[factIndex];
+          const source = fact.evidence[round.target] || ["本地档案", "来源记录缺失"];
+          return { text: fact.text, source: source[0], quote: source[1] };
+        }) } };
+    record.completedAnswers.push(currentResult);
     record.completedAnswers = record.completedAnswers.slice(-5);
     saveRecord();
-    ui["result-kicker"].textContent = correct ? "目标已确认 / 档案解封" : "本局结束 / 档案解封";
-    ui["result-title"].textContent = correct ? "猜中了。" : "答案揭晓。";
-    ui["result-subtitle"].textContent = correct ? `在第 ${round.stage} 条线索阶段确认目标。` : "已放弃本题，答案与线索依据如下。";
-    ui["result-score"].innerHTML = `+${gained} <small>分</small>`;
-    ui["answer-name"].textContent = operator.name;
-    ui["answer-meta"].textContent = `${operator.rarity} 星 · ${operator.profession}`;
-    ui["archive-link"].href = operator.archive;
-    ui["evidence-list"].replaceChildren(...round.facts.map((factIndex, place) => {
-      const fact = data.facts[factIndex];
-      const source = fact.evidence[round.target] || ["本地档案", "来源记录缺失"];
+    renderResult(currentResult);
+    showScreen("result");
+    ui["again-button"].focus();
+  }
+
+  function renderResult(answer, historical = false) {
+    const result = answer.result;
+    const operator = result || data.operators.find(item => item.id === answer.id);
+    ui["history-return-button"].hidden = !historical;
+    ui["again-button"].hidden = historical;
+    ui["result-score"].hidden = !result;
+    ui["history-notice"].hidden = !!result;
+    ui["evidence-heading"].hidden = !result;
+    ui["history-notice"].textContent = result ? "" : "这条旧记录只保存了答案，未保存当时的线索和得分。";
+    ui["result-kicker"].textContent = historical ? `第 ${answer.number} 题 / 历史结算`
+      : result.correct ? "目标已确认 / 档案解封" : "本局结束 / 档案解封";
+    ui["result-title"].textContent = result ? (result.correct ? "猜中了。" : "答案揭晓。") : "历史答案。";
+    ui["result-subtitle"].textContent = result ? (result.correct ? `在第 ${result.stage} 条线索阶段确认目标。`
+      : `已放弃本题，当时已公开 ${result.stage} 条线索。`) : `第 ${answer.number} 题的答案记录。`;
+    ui["result-score"].innerHTML = result ? `+${result.gained} <small>分</small>` : "";
+    ui["answer-name"].textContent = answer.name;
+    ui["answer-meta"].textContent = operator ? `${operator.rarity} 星 · ${operator.profession}` : "";
+    ui["archive-link"].hidden = !operator?.archive;
+    ui["archive-link"].href = operator?.archive || "#";
+    ui["evidence-list"].replaceChildren(...(result?.evidence || []).map((evidence, place) => {
       const item = document.createElement("li");
       item.className = "evidence-card";
       const heading = document.createElement("strong");
-      heading.textContent = `${String(place + 1).padStart(2, "0")} / ${fact.text}`;
+      heading.textContent = `${String(place + 1).padStart(2, "0")} / ${evidence.text}`;
       const quote = document.createElement("p");
-      quote.textContent = source[1];
+      quote.textContent = evidence.quote;
       const label = document.createElement("small");
-      label.textContent = `依据：${source[0]}`;
+      label.textContent = `依据：${evidence.source}`;
       item.append(heading, quote, label);
       return item;
     }));
+  }
+
+  function showHistory(answer) {
+    if (!historyView) historyView = { screen };
+    ui["history-return-button"].textContent = historyView.screen === "game" ? "返回当前题目"
+      : historyView.screen === "result" ? "返回本局结算" : "返回首页";
+    renderResult(answer, true);
     showScreen("result");
-    ui["again-button"].focus();
+    ui["history-return-button"].focus({ preventScroll: true });
+  }
+
+  function returnFromHistory() {
+    if (!historyView) return;
+    const destination = historyView.screen;
+    historyView = null;
+    if (destination === "result" && currentResult) renderResult(currentResult);
+    else {
+      ui["history-return-button"].hidden = true;
+      ui["again-button"].hidden = false;
+    }
+    showScreen(destination);
+    ui[destination === "game" ? "operator-search" : destination === "result" ? "again-button" : "start-button"]
+      .focus({ preventScroll: true });
+    if (destination === "game" && selected === null) renderSuggestions();
   }
 
   ui["rules-toggle"].addEventListener("click", () => {
@@ -476,6 +559,7 @@
   });
   ui["start-button"].addEventListener("click", () => begin());
   ui["again-button"].addEventListener("click", () => begin());
+  ui["history-return-button"].addEventListener("click", returnFromHistory);
   ui["submit-button"].addEventListener("click", submitGuess);
   ui["next-button"].addEventListener("click", revealNext);
   ui["give-up-button"].addEventListener("click", () => finish(false));
@@ -501,8 +585,11 @@
       else if (selected !== null) submitGuess();
     }
   });
-  ui["operator-search"].addEventListener("blur", () => setTimeout(hideSuggestions, 160));
+  ui["operator-search"].addEventListener("blur", () => setTimeout(() => {
+    if (document.activeElement !== ui["operator-search"]) hideSuggestions();
+  }, 160));
   ui["clear-record-button"].addEventListener("click", () => {
+    returnFromHistory();
     record = { plays: 0, points: 0, recentAnswers: [], recentSignatures: [], recentFacts: [], recentTopics: [], completedAnswers: [] };
     saveRecord();
     ui["clear-record-button"].textContent = "已清除";

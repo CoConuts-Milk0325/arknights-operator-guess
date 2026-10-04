@@ -17,14 +17,12 @@ test('the final nickname table resolves aliases and their pinyin to canonical na
   for (const [query, expected] of [
     ['红蒂', '浊心斯卡蒂'], ['HONG DI', '浊心斯卡蒂'],
     ['crmxc', '赤刃明霄陈'], ['小羊', '艾雅法拉'],
+    ['火陈', '赤刃明霄陈'], ['HUO CHEN', '赤刃明霄陈'],
     ['xiaoyang', '艾雅法拉'], ['42', '史尔特尔'],
     ['EW', '维什戴尔'], ['奶羊', '纯烬艾雅法拉'],
     ['chongyue', '重岳'], ['qiubai', '仇白'],
   ]) {
     assert.equal(searchOperators(query, operators)[0]?.name, expected, query)
-  }
-  for (const removed of ['火陈', 'huochen']) {
-    assert.equal(searchOperators(removed, operators).some(op => op.name === '赤刃明霄陈'), false, removed)
   }
 })
 

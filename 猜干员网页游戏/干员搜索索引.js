@@ -4048,12 +4048,16 @@ window.OPERATOR_SEARCH_INDEX = {
     ]
   },
   "赤刃明霄陈": {
-    "aliases": [],
+    "aliases": [
+      "火陈"
+    ],
     "pinyinFull": [
-      "chirenmingxiaochen"
+      "chirenmingxiaochen",
+      "huochen"
     ],
     "pinyinInitials": [
-      "crmxc"
+      "crmxc",
+      "hc"
     ]
   },
   "赫德雷": {

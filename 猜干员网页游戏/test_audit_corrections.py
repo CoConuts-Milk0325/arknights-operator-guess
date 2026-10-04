@@ -290,7 +290,8 @@ class AuditCorrectionTests(unittest.TestCase):
             "砾": ({"self:shield", "ally:survival_nonheal", "combo:one_damage_no_control",
                    "rarity:exact:4"}, {"砾", "罗比菈塔"}),
             "司霆惊蛰": ({"range:two_skills_outside", "attack:skill_targets:4", "rarity:exact:6",
-                      "combo:skill_two_damage:arts:physical"}, {"司霆惊蛰", "结城理"}),
+                       "combo:skill_two_damage:arts:physical"},
+                      {"司霆惊蛰", "结城理", "予愿安洁莉娜", "棘刺", "缄默德克萨斯"}),
             "冬时": ({"cost:maxpot:one_digit", "skill:activation:auto",
                     "mechanic:deployment_cost", "control:one"}, {"冬时", "伊内丝"}),
             "绮良": ({"profession:exact:特种", "attack:extra_arts", "damage:exact_two",
@@ -516,6 +517,211 @@ class AuditCorrectionTests(unittest.TestCase):
         for raw, expected in cases.items():
             with self.subTest(raw=raw):
                 self.assertEqual(expected, game.clean(raw))
+
+
+class CoreSemanticRepairTests(unittest.TestCase):
+    """Independent expectations for the seven issues reviewed on 2026-10-04."""
+
+    @classmethod
+    def setUpClass(cls):
+        source = json.loads(game.SOURCE.read_text(encoding="utf-8"))
+        cls.profiles = {r["干员名称"]: game.make_profile(r) for r in source["干员"].values()}
+        cls.rarities = {}
+        for profile in cls.profiles.values():
+            cls.rarities.setdefault(profile["branch"], set()).add(profile["rarity"])
+
+    def clues(self, name):
+        return {f[0]: f[4] for f in game.facts_for(self.profiles[name], self.rarities)}
+
+    def test_crownslayer_periodic_attacks_are_not_dot(self):
+        self.assertNotIn("damage:over_time", self.clues("弑君者"))
+
+    def test_reed_dot_evidence_is_the_attached_damage_state(self):
+        self.assertIn("生命火种", self.clues("焰影苇草")["damage:over_time"])
+
+    def test_self_recovery_and_healing_immunity_are_not_other_healing(self):
+        for name in ("水月", "泥岩", "斥罪"):
+            with self.subTest(name=name):
+                self.assertIn("heal:no_direct", self.clues(name))
+                self.assertNotIn("heal:direct_other", self.clues(name))
+        for text in ("无法被友方角色治疗", "每击杀一名敌人，回复10%的最大生命",
+                     "每层护盾破裂时恢复自身20%最大生命", "友方单位受到的治疗提高20%"):
+            with self.subTest(text=text):
+                self.assertFalse(game.direct_heal([("特性", text)]))
+
+    def test_periodic_direct_healing_is_not_regeneration(self):
+        self.assertTrue(game.direct_heal([("技能", "每秒治疗周围一名友方单位50点生命")]))
+        self.assertFalse(game.direct_heal([("天赋", "所有友方干员每秒回复25点生命")]))
+        self.assertIn("heal:direct_other", self.clues("桃金娘"))
+        self.assertIn("heal:direct_other", self.clues("万顷"))
+
+    def test_myrtle_regen_has_no_healing_restricted_vanguard_recipient(self):
+        self.assertNotIn("heal:hunger", self.clues("桃金娘"))
+        for name in ("调香师", "浊心斯卡蒂", "歌蕾蒂娅", "暴雨"):
+            with self.subTest(name=name):
+                self.assertIn("heal:hunger", self.clues(name))
+
+    def test_mizuki_skill_preserves_trait_aoe_with_root(self):
+        self.assertIn("combo:aoe_control:root", self.clues("水月"))
+        self.assertIn("combo:aoe_control:root", self.clues("歌蕾蒂娅"))
+        self.assertIn("combo:aoe_control:stun", self.clues("林"))
+
+    def test_underflow_attack_triggers_arts_talent_damage(self):
+        self.assertIn("combo:skill_two_damage:arts:physical", self.clues("深巡"))
+        self.assertIn("combo:skill_two_damage:arts:physical", self.clues("火哨"))
+
+    def test_incompatible_modules_cannot_be_combined(self):
+        import copy
+        profile = copy.deepcopy(self.profiles["水月"])
+        profile["trait"] = "可以攻击敌人"
+        profile["talents"] = []
+        profile["skills"] = [dict(profile["skills"][1], text="攻击速度+50")]
+        base = profile["modules"][0]
+        profile["modules"] = [base,
+            dict(base, id="root", name="束缚模组", trait=["攻击使目标束缚1秒"]),
+            dict(base, id="aoe", name="群攻模组", trait=["对攻击范围内所有敌人造成伤害"])]
+        ids = {f[0] for f in game.facts_for(profile, self.rarities)}
+        self.assertNotIn("combo:aoe_control:root", ids)
+
+    def test_burn_elemental_damage_does_not_block_no_control(self):
+        self.assertIn("control:none", self.clues("薇薇安娜"))
+
+    def test_enemy_neural_loss_causes_palsy_not_friendly_stun(self):
+        self.assertEqual({"palsy"}, game.control_types([("天赋", "攻击附带相当于伤害10%的神经损伤")]))
+        self.assertEqual(set(), game.control_types([("天赋", "治疗友方神经损伤")]))
+
+    def test_unknown_elemental_control_is_retained_as_candidate(self):
+        import copy
+        unknown = copy.deepcopy(self.profiles["水月"])
+        unknown["talents"] = [("未知元素", "攻击附带相当于伤害10%的元素损伤")]
+        unknown["skills"] = []
+        unknown["modules"] = [unknown["modules"][0]]
+        facts, _ = game.build_facts([self.profiles["星极"], unknown, self.profiles["深巡"]])
+        fact = next(f for f in facts if f["id"] == "control:none")
+        self.assertNotIn(1, fact["members"])
+        self.assertIn(1, fact["possibleMembers"])
+
+    def test_known_elemental_loss_does_not_prove_unknown_effect_complete(self):
+        text = "攻击附带相当于伤害10%的神经损伤；攻击同时附带相当于伤害10%的元素损伤"
+        self.assertFalse(game.elemental_control_complete([("天赋", text)]))
+
+    def test_thorns_alter_both_area_damage_skills_are_true_aoe(self):
+        for skill in self.profiles["引星棘刺"]["skills"][1:]:
+            with self.subTest(skill=skill["name"]):
+                self.assertIsNotNone(game.true_aoe([("技能", skill["text"])]))
+
+    def test_aoe_damage_modifiers_and_recipient_switch_are_not_damage(self):
+        for text in ("对周围敌人造成的法术伤害提高20%", "周围敌人受到的治疗降低50%",
+                     "周围敌人移动速度降低50%，友方干员每秒受到100点法术伤害",
+                     "周围敌人移动速度降低50%，一名敌人受到100点法术伤害",
+                     "对周围最多3名敌人造成100点物理伤害"):
+            with self.subTest(text=text):
+                self.assertIsNone(game.true_aoe([("技能", text)]))
+
+    def test_counterattack_area_damage_remains_true_aoe(self):
+        self.assertIn("attack:true_aoe", self.clues("菲莱"))
+
+    def test_both_disputed_questions_have_two_real_candidates(self):
+        selected = [self.profiles[n] for n in ("星极", "薇薇安娜", "焰影苇草", "引星棘刺", "深巡")]
+        facts, _ = game.build_facts(selected)
+        lookup = {f["id"]: set(f.get("possibleMembers", f["members"])) for f in facts}
+        for ids, expected in (
+            (["block:skill_change", "branch:identity:artsfghter", "debuff:arts_fragile", "control:none"],
+             {"星极", "薇薇安娜"}),
+            (["debuff:weak", "attack:true_aoe", "rarity:exact:6", "damage:over_time"],
+             {"焰影苇草", "引星棘刺"})):
+            with self.subTest(ids=ids):
+                actual = set.intersection(*(lookup[fid] for fid in ids))
+                self.assertEqual(expected, {selected[i]["name"] for i in actual})
+
+    def test_attack_damage_replacement_does_not_keep_original_type(self):
+        for name, skill_name, unwanted in (("阿米娅", "奇美拉", {"arts"}),
+                                          ("雷蛇", "反击电弧", {"physical"}),
+                                          ("年", "锡灼", {"physical"}),
+                                          ("断崖", "多导向散射弹丸", {"physical"}),
+                                          ("芳汀", "致命恶作剧", {"physical"}),
+                                          ("崖心", "锁链勾爪", {"physical"}),
+                                          ("白雪", "凝武", {"physical"})):
+            with self.subTest(name=name):
+                for fact_id, evidence in self.clues(name).items():
+                    if fact_id.startswith("combo:skill_two_damage:") and f"技能「{skill_name}」" in evidence:
+                        self.assertFalse(unwanted & set(fact_id.split(":")[2:]), evidence)
+
+    def test_deployment_talent_is_not_triggered_by_normal_attack_skill(self):
+        profile = self.profiles["耀骑士临光"]
+        sources, _ = game.skill_effect_sources(profile, profile["modules"][0], profile["skills"][0])
+        self.assertNotIn("stun", game.control_types(sources))
+        self.assertFalse(any(game.deals_typed_damage(phrase, "真实") for _, phrase in sources))
+
+    def test_self_attack_recovery_is_not_other_healing(self):
+        self.assertFalse(game.direct_heal([("技能", "每次攻击恢复相当于造成伤害25%的生命")]))
+        self.assertIn("heal:no_direct", self.clues("因陀罗"))
+
+    def test_reflective_module_is_not_a_skill_attack_effect(self):
+        import copy
+        profile = copy.deepcopy(self.profiles["水月"])
+        profile["trait"] = "可以攻击敌人"
+        profile["talents"] = []
+        module = dict(profile["modules"][0], trait=["受到攻击时对敌人造成100点法术伤害"])
+        sources, _ = game.skill_effect_sources(profile, module, dict(profile["skills"][0], text="攻击力+50%"))
+        self.assertFalse(any(game.deals_typed_damage(phrase, "法术") for _, phrase in sources))
+
+    def test_damage_coefficient_does_not_imply_retained_normal_attacks(self):
+        profile = self.profiles["水月"]
+        sources, attacks = game.skill_effect_sources(profile, profile["modules"][0],
+            dict(profile["skills"][0], text="立即对周围敌人造成攻击力200%的法术伤害"))
+        self.assertFalse(attacks)
+        self.assertEqual(1, len(sources))
+
+    def test_extra_damage_still_combines_with_the_original_attack(self):
+        self.assertIn("combo:skill_two_damage:arts:physical", self.clues("斥罪"))
+        self.assertIn("combo:skill_two_damage:arts:physical", self.clues("刻俄柏"))
+
+    def test_teresa_module_instant_recovery_is_other_healing(self):
+        self.assertIn("heal:direct_other", self.clues("魔王"))
+        self.assertNotIn("heal:no_direct", self.clues("魔王"))
+
+    def test_low_health_condition_is_not_healing_denial(self):
+        self.assertIn("heal:direct_other", self.clues("琳琅诗怀雅"))
+        self.assertNotIn("heal:no_direct", self.clues("琳琅诗怀雅"))
+
+    def test_mixed_talent_keeps_only_skill_triggered_effect(self):
+        import copy
+        profile = copy.deepcopy(self.profiles["水月"])
+        profile["trait"] = "可以攻击敌人"
+        profile["talents"] = [("混合天赋", "受到攻击时对敌人造成100点法术伤害；攻击时使目标束缚1秒")]
+        profile["skills"] = [dict(profile["skills"][0], text="攻击力+50%")]
+        profile["modules"] = [profile["modules"][0]]
+        ids = {f[0] for f in game.facts_for(profile, self.rarities)}
+        self.assertNotIn("combo:skill_two_damage:arts:physical", ids)
+        self.assertNotIn("combo:skill_damage_control:arts:root", ids)
+        self.assertIn("combo:skill_damage_control:physical:root", ids)
+
+    def test_enemy_attack_trigger_is_not_operator_attack_trigger(self):
+        profile = self.profiles["酒神"]
+        sources, _ = game.skill_effect_sources(profile, profile["modules"][0], profile["skills"][0])
+        self.assertFalse(any("堕梦" in label for label, _ in sources))
+
+    def test_healing_replacement_attack_cannot_trigger_enemy_stun(self):
+        self.assertNotIn("combo:skill_damage_control:physical:stun", self.clues("古米"))
+
+    def test_skill_activation_talent_changes_effective_attack_type(self):
+        self.assertIn("combo:skill_damage_control:physical:stun", self.clues("特米米"))
+        self.assertNotIn("combo:skill_damage_control:arts:stun", self.clues("特米米"))
+
+    def test_friendly_damage_condition_is_not_own_damage(self):
+        self.assertFalse(game.deals_typed_damage(
+            "其他友方穿过火墙造成法术伤害时附带相当于余攻击力10%的灼燃损伤", "法术"))
+        self.assertNotIn("combo:skill_two_damage:arts:physical", self.clues("余"))
+
+    def test_damage_modifier_does_not_create_damage_type(self):
+        self.assertFalse(game.deals_typed_damage("对目标造成的法术伤害提升14%", "法术"))
+
+    def test_attack_attached_bleeding_keeps_periodic_damage(self):
+        self.assertIn("combo:skill_two_damage:arts:physical", self.clues("奥斯塔"))
+
+    def test_inactive_skill_condition_is_not_activation_trigger(self):
+        self.assertIsNone(game.skill_linked_effect("未开启技能时对周围敌人造成100点法术伤害", True))
 
 
 if __name__ == "__main__":

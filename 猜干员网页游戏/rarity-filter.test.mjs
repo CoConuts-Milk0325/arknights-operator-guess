@@ -7,6 +7,30 @@ const directory = new URL('./', import.meta.url);
 const html = readFileSync(new URL('首页.html', directory), 'utf8');
 const script = readFileSync(new URL('游戏逻辑.js', directory), 'utf8');
 
+test('机制修复后的两组争议线索在浏览器中拒绝作为唯一题', () => {
+  const window = {};
+  vm.runInNewContext(readFileSync(new URL('事实索引.js', directory), 'utf8'), { window });
+  const released = window.GUESS_DATA;
+  const questions = [
+    { names: ['星极', '薇薇安娜'], ids: ['block:skill_change', 'branch:identity:artsfghter', 'debuff:arts_fragile', 'control:none'] },
+    { names: ['焰影苇草', '引星棘刺'], ids: ['debuff:weak', 'attack:true_aoe', 'rarity:exact:6', 'damage:over_time'] },
+  ];
+  for (const { names, ids } of questions) {
+    const originalIndexes = names.map((name) => released.operators.findIndex((operator) => operator.name === name));
+    const facts = ids.map((id) => {
+      const fact = released.facts.find((item) => item.id === id);
+      assert.ok(fact, id);
+      for (const index of originalIndexes) assert.ok(fact.members.includes(index), `${released.operators[index].name}: ${id}`);
+      return { ...fact, members: [0, 1], possibleMembers: [0, 1] };
+    });
+    const data = { version: 'disputed', operators: originalIndexes.map((i) => released.operators[i]), facts,
+      byOperator: [[0, 1, 2, 3], [0, 1, 2, 3]], fallback: { 0: [0, 1, 2, 3], 1: [0, 1, 2, 3] } };
+    const app = boot(new Map(), data, `?target=${encodeURIComponent(names[0])}`);
+    app.element('start-button').dispatch('click');
+    assert.equal(app.element('data-status').textContent, '当前档案未能生成唯一题目');
+  }
+});
+
 class Element {
   constructor(tagName = 'DIV') {
     this.tagName = tagName;
@@ -18,6 +42,7 @@ class Element {
     this.value = '';
     this.hidden = false;
     this.disabled = false;
+    this.open = false;
     const classes = new Set();
     this.classList = {
       add: (name) => classes.add(name),
@@ -27,8 +52,8 @@ class Element {
   }
 
   addEventListener(name, listener) { this.listeners.set(name, listener); }
-  dispatch(name) {
-    this.listeners.get(name)?.({ key: '', preventDefault() {}, isComposing: false });
+  dispatch(name, fields = {}) {
+    this.listeners.get(name)?.({ key: '', preventDefault() {}, isComposing: false, ...fields });
   }
   setAttribute(name, value) { this.attributes.set(name, String(value)); }
   getAttribute(name) { return this.attributes.get(name); }
@@ -63,9 +88,15 @@ function fixture() {
   return { version: 'test', operators, facts, byOperator, fallback };
 }
 
-function boot(saved = new Map(), data = fixture(), search = '') {
-  const elements = new Map([...html.matchAll(/\bid="([^"]+)"/g)]
-    .map(([, id]) => [id, new Element()]));
+function boot(saved = new Map(), data = fixture(), search = '', { blockStorage = false } = {}) {
+  const elements = new Map([...html.matchAll(/<([a-z][\w-]*)\b([^>]*\bid="([^"]+)"[^>]*)>/g)]
+    .map(([, tag, attributes, id]) => {
+      const element = new Element(tag.toUpperCase());
+      element.hidden = /\shidden(?:\s|=|$)/.test(attributes);
+      element.disabled = /\sdisabled(?:\s|=|$)/.test(attributes);
+      element.open = /\sopen(?:\s|=|$)/.test(attributes);
+      return [id, element];
+    }));
   const document = {
     getElementById: (id) => elements.get(id) ?? null,
     createElement: (tagName) => new Element(tagName.toUpperCase()),
@@ -78,8 +109,8 @@ function boot(saved = new Map(), data = fixture(), search = '') {
     scrollTo() {},
   };
   const localStorage = {
-    getItem: (key) => saved.get(key) ?? null,
-    setItem: (key, value) => saved.set(key, value),
+    getItem: (key) => { if (blockStorage) throw new Error('storage blocked'); return saved.get(key) ?? null; },
+    setItem: (key, value) => { if (blockStorage) throw new Error('storage blocked'); saved.set(key, value); },
   };
   const searchIndexPath = new URL('干员搜索索引.js', directory);
   if (existsSync(searchIndexPath)) {
@@ -179,6 +210,153 @@ test('legacy started-round records and abandoned rounds never appear as complete
   assert.equal(game.record().completedAnswers[0].number, 3);
 });
 
+test('history opens the saved result and returns to the unchanged in-progress round', () => {
+  const game = boot(new Map(), fixture(), '?target=甲');
+  game.element('start-button').dispatch('click');
+  game.element('next-button').dispatch('click');
+  game.element('operator-search').value = '甲';
+  game.element('operator-search').dispatch('input');
+  game.element('suggestions').children[0].dispatch('click');
+  game.element('submit-button').dispatch('click');
+  game.element('again-button').dispatch('click');
+  game.element('next-button').dispatch('click');
+  game.element('operator-search').value = '乙';
+  game.element('operator-search').dispatch('input');
+  game.element('suggestions').children[0].dispatch('click');
+  const before = game.record();
+  game.element('recent-answer-list').children[0].children[1].dispatch('click');
+  assert.equal(game.element('game-screen').hidden, true);
+  assert.equal(game.element('result-screen').hidden, false);
+  assert.equal(game.element('result-title').textContent, '猜中了。');
+  assert.equal(game.element('result-subtitle').textContent, '在第 2 条线索阶段确认目标。');
+  assert.equal(game.element('result-score').innerHTML, '+3 <small>分</small>');
+  assert.equal(game.element('evidence-list').children.length, 4);
+  assert.equal(game.element('again-button').hidden, true);
+  game.element('history-return-button').dispatch('click');
+  assert.equal(game.element('game-screen').hidden, false);
+  assert.equal(game.element('result-screen').hidden, true);
+  assert.equal(game.element('operator-search').value, '乙');
+  assert.equal(game.element('submit-button').disabled, false);
+  assert.equal(game.element('stage-count').innerHTML, '2 <small>/ 4</small>');
+  assert.deepEqual(game.record(), before);
+});
+
+test('returning from history restores suggestions for an unfinished search', async () => {
+  const game = boot(new Map(), fixture(), '?target=甲');
+  game.element('start-button').dispatch('click');
+  game.element('give-up-button').dispatch('click');
+  game.element('again-button').dispatch('click');
+  game.element('operator-search').value = '乙';
+  game.element('operator-search').dispatch('input');
+  game.element('operator-search').dispatch('blur');
+  game.element('recent-answer-list').children[0].children[1].dispatch('click');
+  await new Promise(resolve => setTimeout(resolve, 170));
+  assert.equal(game.element('suggestions').hidden, true);
+  game.element('history-return-button').dispatch('click');
+  assert.equal(game.element('operator-search').value, '乙');
+  assert.equal(game.element('suggestions').hidden, false);
+  assert.equal(game.element('suggestions').children[0].children[0].textContent, '乙');
+  game.element('operator-search').dispatch('keydown', { key: 'Enter' });
+  assert.equal(game.element('submit-button').disabled, false);
+});
+
+test('historical clues and result survive refresh and changed source data', () => {
+  const game = boot(new Map(), fixture(), '?target=甲');
+  game.element('start-button').dispatch('click');
+  game.element('next-button').dispatch('click');
+  game.element('next-button').dispatch('click');
+  game.element('give-up-button').dispatch('click');
+  const updated = fixture();
+  updated.operators[0].name = '更新后的名字';
+  updated.facts.forEach(fact => { fact.text = '更新后的线索'; fact.evidence = {}; });
+  const reloaded = boot(game.saved, updated);
+  reloaded.element('recent-answer-list').children[0].children[1].dispatch('click');
+  assert.equal(reloaded.element('result-screen').hidden, false);
+  assert.equal(reloaded.element('answer-name').textContent, '甲');
+  assert.equal(reloaded.element('result-title').textContent, '答案揭晓。');
+  assert.equal(reloaded.element('result-subtitle').textContent, '已放弃本题，当时已公开 3 条线索。');
+  assert.equal(reloaded.element('result-score').innerHTML, '+0 <small>分</small>');
+  assert.equal(reloaded.element('evidence-list').children[0].children[0].textContent, '01 / 线索 0');
+  assert.equal(reloaded.element('evidence-list').children[0].children[1].textContent, '依据');
+  assert.equal(reloaded.element('archive-link').href, 'one.html');
+  reloaded.element('history-return-button').dispatch('click');
+  assert.equal(reloaded.element('intro-screen').hidden, false);
+  assert.equal(reloaded.record().plays, 1);
+});
+
+test('returning from an older result restores the latest result without rescoring', () => {
+  const game = boot();
+  game.element('start-button').dispatch('click');
+  game.element('give-up-button').dispatch('click');
+  const oldName = game.element('answer-name').textContent;
+  game.element('again-button').dispatch('click');
+  game.element('give-up-button').dispatch('click');
+  const newName = game.element('answer-name').textContent;
+  game.element('recent-answer-list').children[1].children[1].dispatch('click');
+  assert.equal(game.element('answer-name').textContent, oldName);
+  game.element('history-return-button').dispatch('click');
+  assert.equal(game.element('answer-name').textContent, newName);
+  assert.equal(game.element('again-button').hidden, false);
+  assert.equal(game.record().plays, 2);
+});
+
+test('old answer-only records explain missing details rather than inventing a result', () => {
+  const saved = new Map([['sealed-dossier-history-v2', JSON.stringify({
+    plays: 1, points: 0, completedAnswers: [{ id: 'one', name: '甲', number: 1 }],
+  })]]);
+  const game = boot(saved);
+  game.element('recent-answer-list').children[0].children[1].dispatch('click');
+  assert.equal(game.element('result-screen').hidden, false);
+  assert.equal(game.element('answer-name').textContent, '甲');
+  assert.equal(game.element('result-score').hidden, true);
+  assert.equal(game.element('evidence-list').children.length, 0);
+  assert.match(game.element('history-notice').textContent, /未保存.*线索.*得分/);
+});
+
+test('historical results work in memory when local storage is blocked', () => {
+  const game = boot(new Map(), fixture(), '?target=甲', { blockStorage: true });
+  game.element('start-button').dispatch('click');
+  game.element('give-up-button').dispatch('click');
+  game.element('again-button').dispatch('click');
+  game.element('recent-answer-list').children[0].children[1].dispatch('click');
+  assert.equal(game.element('result-screen').hidden, false);
+  assert.equal(game.element('answer-name').textContent, '甲');
+  assert.equal(game.element('evidence-list').children.length, 4);
+  game.element('history-return-button').dispatch('click');
+  assert.equal(game.element('game-screen').hidden, false);
+  assert.equal(game.element('record-summary').textContent, '已完成 1 局 · 总分 0');
+});
+
+test('clearing records closes a historical result while keeping the current round', () => {
+  const game = boot();
+  game.element('start-button').dispatch('click');
+  game.element('give-up-button').dispatch('click');
+  game.element('again-button').dispatch('click');
+  game.element('recent-answer-list').children[0].children[1].dispatch('click');
+  assert.equal(game.element('result-screen').hidden, false);
+  game.element('clear-record-button').dispatch('click');
+  assert.equal(game.element('game-screen').hidden, false);
+  assert.equal(game.element('result-screen').hidden, true);
+  assert.equal(game.element('recent-answer-list').children.length, 0);
+  assert.equal(game.record().plays, 0);
+});
+
+test('starting a round closes optional top panels without changing selected stars', () => {
+  const game = boot();
+  const panel = game.element('rarity-panel');
+  assert.ok(panel);
+  assert.equal(panel.open, false);
+  panel.open = true;
+  selectOnly(game, 6);
+  game.element('rules-toggle').dispatch('click');
+  game.element('start-button').dispatch('click');
+  assert.equal(panel.open, false);
+  assert.equal(game.element('rules-panel').hidden, true);
+  assert.equal(game.element('rules-toggle').getAttribute('aria-expanded'), 'false');
+  assert.deepEqual(game.selectedStars(), [6]);
+  assert.equal(game.element('rarity-summary').textContent, '6 星');
+});
+
 test('selected stars limit both new answers and search suggestions', () => {
   const game = boot();
   selectOnly(game, 2);
@@ -257,11 +435,9 @@ function suggestionNames(game, query) {
 
 test('nicknames and pinyin select the canonical operator in the clue game', () => {
   const game = searchGame();
-  for (const removed of ['火陈', 'huochen']) {
-    assert.deepEqual(suggestionNames(game, removed), [], removed);
-  }
   for (const [query, expected] of [
     ['红蒂', '浊心斯卡蒂'], ['hongdi', '浊心斯卡蒂'],
+    ['火陈', '赤刃明霄陈'], ['HUO CHEN', '赤刃明霄陈'],
     ['CHI REN MING XIAO CHEN', '赤刃明霄陈'], ['crmxc', '赤刃明霄陈'],
     ['赤刃明霄陈', '赤刃明霄陈'],
   ]) {
@@ -313,6 +489,7 @@ test('URL target uses canonical-name priority and supports aliases and pinyin', 
     .forEach((name, index) => { data.operators[index].name = name; });
   for (const [query, expected] of [
     ['红蒂', '浊心斯卡蒂'], ['hongdi', '浊心斯卡蒂'],
+    ['火陈', '赤刃明霄陈'], ['huochen', '赤刃明霄陈'],
     ['CHI REN MING XIAO CHEN', '赤刃明霄陈'], ['crmxc', '赤刃明霄陈'],
     ['斯卡蒂', '斯卡蒂'], ['蒂蒂', '斯卡蒂'],
   ]) {
