@@ -17,6 +17,25 @@ class AuditCorrectionTests(unittest.TestCase):
         return {fact[0]: fact[4] for fact in game.facts_for(
             profile, {profile["branch"]: {profile["rarity"]}})}
 
+    def test_clementia_exile_is_enemy_displacement(self):
+        clues = self.clues("克莱门莎")
+        self.assertNotIn("control:none", clues)
+        self.assertIn("control:can:exile", clues)
+        self.assertIn("combo:skill_damage_control:physical:exile", clues)
+        self.assertIn("combo:aoe_control:exile", clues)
+        self.assertIn("风暴潮", clues["control:can:exile"])
+        self.assertEqual(game.control_types([("技能", "放逐舱使周围最多15名地面敌人不断向前移动")]), {"exile"})
+        for phrase in ("向前方召唤浮游放逐舱", "放逐舱在移动3格后消失", "自身免疫放逐", "已经处于放逐状态的敌人"):
+            with self.subTest(phrase=phrase):
+                self.assertEqual(game.control_types([("技能", phrase)]), set())
+
+    def test_clementia_vortex_can_damage_air_without_normal_air_attack(self):
+        profiles = [game.make_profile(self.records[name]) for name in ("克莱门莎", "泥岩", "旅骨")]
+        facts, _ = game.build_facts(profiles)
+        by_id = {fact["id"]: fact for fact in facts}
+        self.assertNotIn(0, by_id["air:normal_attack"]["members"])
+        self.assertNotIn(0, by_id["air:solo_none"]["possibleMembers"])
+
     def test_false_support_and_self_effects_are_excluded(self):
         excluded = {
             "ally:output:attack": ("仇白", "卡涅利安", "夜半", "灰烬", "猎蜂",
@@ -295,7 +314,7 @@ class AuditCorrectionTests(unittest.TestCase):
             "冬时": ({"cost:maxpot:one_digit", "skill:activation:auto",
                     "mechanic:deployment_cost", "control:one"}, {"冬时", "伊内丝"}),
             "绮良": ({"profession:exact:特种", "attack:extra_arts", "damage:exact_two",
-                    "heal:no_direct"}, {"绮良", "伊桑"}),
+                    "heal:no_direct"}, {"绮良", "伊桑", "旅骨"}),
         }
         for target, (clue_ids, expected) in cases.items():
             with self.subTest(answer=target):
@@ -339,7 +358,7 @@ class AuditCorrectionTests(unittest.TestCase):
                        if game.AUDITED.get(profile["id"], {}).get("air_damage")}
         self.assertFalse(normal_air & confirmed_no_air)
         self.assertFalse(special_air & confirmed_no_air)
-        self.assertEqual((209, 49, 173),
+        self.assertEqual((211, 50, 173),
                          (len(normal_air), len(special_air), len(confirmed_no_air)))
         self.assertEqual(set(range(len(profiles))),
                          normal_air | special_air | confirmed_no_air)

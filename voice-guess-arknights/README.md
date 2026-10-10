@@ -37,7 +37,7 @@ npm run preview
 
 ## 音频与代理
 
-分片里的音频路径带源前缀：`bwiki:` 指向 B 站自有 CDN（`patchwiki.biligame.com`，32022 条中的 31864 条），无前缀或 `prts:` 指向 torappu 镜像（158 条：bwiki 该单元格没有文件、行文本对不上条数、或 bwiki 单元格串了别人的录音）。每条 `bwiki:` 条目都额外带一个 `alt`（PRTS 同名 `.mp3`），`src/config.js` 的 `getAudioUrl` / `getFallbackUrl` 按前缀选源并把 `.wav` 换成 `.mp3`，`AudioPlayer.vue` 在网络或解码失败时自动回退一次。
+分片里的音频路径带源前缀：`bwiki:` 指向 B 站自有 CDN（`patchwiki.biligame.com`，32238 条中的 32080 条），无前缀或 `prts:` 指向 torappu 镜像（158 条因 bwiki 缺文件、行文本对不上条数或单元格串录音而保留的记录）。本批三名新干员的 216 条语音分片同步自用户已更新的 `D:\代码\配音猜干员\voice-guess`。每条 `bwiki:` 条目都额外带一个 `alt`（PRTS 同名 `.mp3`），`src/config.js` 的 `getAudioUrl` / `getFallbackUrl` 按前缀选源并把 `.wav` 换成 `.mp3`，`AudioPlayer.vue` 在网络或解码失败时自动回退一次。
 
 语音源相关脚本：`node scripts/fetch-bwiki-voices.mjs` 抓取 bwiki 语音页（455 页，缓存在 `.bwiki-cache/pages/`，可断点续跑），`node scripts/apply-bwiki-voices.mjs` 按「条数 + 方言条目落在类别尾部」结构对齐改写分片，默认 dry-run，加 `--write` 落地；确实不能让某个槽位走 bwiki 时，写进该文件顶部的 `HOLDOUT`（整员 / 语言池 / 槽位三级），并注明证据。对应关系的复核工具是 `scripts/audit-column-tags.mjs`（每条链接对回 bwiki 的（日）（中）（方）（联）列）、`scripts/audit-correspondence.mjs`（同音频复用、台词字数与音频时长比）、`scripts/verify-audio-text.mjs` + `scripts/adjudicate-cn.mjs`（逐条转写对台本）与 `scripts/find-cross-assignments.mjs`（把听错的台词反查回真正的干员）。
 

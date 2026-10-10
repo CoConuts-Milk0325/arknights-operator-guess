@@ -173,7 +173,7 @@ CONTROL_NAMES = {
     "freeze": ("冻结",), "cold": ("寒冷",), "sleep": ("沉睡",),
     "levitate": ("浮空",), "silence": ("沉默", "失去特殊能力", "特殊能力失效"), "disarm": ("缴械",),
     "fear": ("恐惧",), "tremble": ("战栗",), "palsy": ("麻痹",), "push": ("推开", "推力", "推动", "击退", "弹开"),
-    "pull": ("拉拽", "拖拽", "牵引"), "teleport": ("传送",),
+    "pull": ("拉拽", "拖拽", "牵引"), "teleport": ("传送",), "exile": ("放逐",),
 }
 SURVIVAL = {
     "defense": ("防御力", "防御"), "resistance": ("法术抗性",),
@@ -191,6 +191,8 @@ OUTPUT_BUFF = {
 
 # 审过 PRTS 单人页面的特殊机制；这里只补足不能从客户端短描述推断的事实。
 AUDITED = {
+    # PRTS 克莱门莎「风暴潮」备注：旋涡效果半径1.5，可对空；常态普攻仍不可对空。
+    "char_4231_clemnt": {"air_damage": True},
     # PRTS：干员 Mon3tr 的「重构体」只承担生命流失、占位和治疗跳跃，
     # 不攻击或施加控制；与凯尔希的同名召唤物不是同一个能力实体。
     "char_4179_monstr": {"summon_no_damage_control": True},
@@ -707,6 +709,10 @@ def damage_types(profile: dict, sources: list[tuple[str, str]]) -> set[str]:
 def control_types(sources: list[tuple[str, str]]) -> set[str]:
     result = set()
     for _, phrase in sources:
+        # PRTS 克莱门莎二技能：放逐舱携带敌人移动属于放逐位移。
+        # 名称中的“放逐”及舱体自身移动不能单独证明对敌施加该效果。
+        if re.search(r"放逐舱使[^，；。]{0,60}敌人不断向前移动", phrase):
+            result.add("exile")
         # 敌方神经损伤爆发产生麻痹；我方受损伤后的晕眩不能套给敌人。
         if inflicts_elemental_loss(phrase, "神经"):
             result.add("palsy")
@@ -715,6 +721,8 @@ def control_types(sources: list[tuple[str, str]]) -> set[str]:
                 and "额外造成一层寒冷" in phrase):
             result.add("freeze")
         for code, words in CONTROL_NAMES.items():
+            if code == "exile":
+                continue
             for word in words:
                 matches = list(re.finditer(re.escape(word), phrase))
                 if not matches:
@@ -2189,7 +2197,7 @@ def facts_for(profile: dict, branch_rarities: dict[str, set[int]]) -> list[tuple
     rarity_count = len(branch_rarities[profile["branch"]])
     if 1 <= rarity_count <= 6:
         add(f"branch:rarities:{rarity_count}", "统计", "branch_rarity",
-            f"所在分支覆盖{rarity_count}个星级", f"431名干员中，该分支星级为：{'、'.join(map(str, sorted(branch_rarities[profile['branch']])))}")
+            f"所在分支覆盖{rarity_count}个星级", f"当前候选干员中，该分支星级为：{'、'.join(map(str, sorted(branch_rarities[profile['branch']])))}")
     branch_name = BRANCH_NAMES.get(profile["branch"])
     if branch_name:
         add(f"branch:identity:{profile['branch']}", "统计", "branch_identity",
@@ -2560,7 +2568,7 @@ def main() -> None:
         missing = "、".join(profile["name"] for index, profile in enumerate(profiles) if index not in fallback)
         raise ValueError(f"有干员无法组成唯一的四线索题目，拒绝发布不完整答案池：{missing}")
     released = {
-        "version": f"{data['资料说明'].get('来源提交') or 'local'}:{hashlib.sha256(raw).hexdigest()[:12]}:semantic-54",
+        "version": f"{data['资料说明'].get('来源提交') or 'local'}:{hashlib.sha256(raw).hexdigest()[:12]}:semantic-55",
         "operators": [{key: item[key] for key in ("id", "name", "profession", "rarity", "archive")} for item in profiles],
         "facts": facts, "byOperator": by_operator, "fallback": fallback,
     }

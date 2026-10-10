@@ -504,6 +504,15 @@ window.OPERATOR_SEARCH_INDEX = {
       "kokodayo"
     ]
   },
+  "克莱门莎": {
+    "aliases": [],
+    "pinyinFull": [
+      "kelaimensha"
+    ],
+    "pinyinInitials": [
+      "klms"
+    ]
+  },
   "八幡海铃": {
     "aliases": [
       "海铃"
@@ -1591,6 +1600,15 @@ window.OPERATOR_SEARCH_INDEX = {
       "wf"
     ]
   },
+  "德托莱多": {
+    "aliases": [],
+    "pinyinFull": [
+      "detuolaiduo"
+    ],
+    "pinyinInitials": [
+      "dtld"
+    ]
+  },
   "德克萨斯": {
     "aliases": [
       "德狗"
@@ -1882,6 +1900,15 @@ window.OPERATOR_SEARCH_INDEX = {
       "xynts",
       "xn",
       "xny"
+    ]
+  },
+  "旅骨": {
+    "aliases": [],
+    "pinyinFull": [
+      "lvgu"
+    ],
+    "pinyinInitials": [
+      "lg"
     ]
   },
   "早露": {
