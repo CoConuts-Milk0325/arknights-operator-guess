@@ -544,6 +544,15 @@ window.OPERATOR_SEARCH_INDEX = {
       "bn"
     ]
   },
+  "冻河": {
+    "aliases": [],
+    "pinyinFull": [
+      "donghe"
+    ],
+    "pinyinInitials": [
+      "dh"
+    ]
+  },
   "凛冬": {
     "aliases": [
       "斯大林"
@@ -947,6 +956,15 @@ window.OPERATOR_SEARCH_INDEX = {
       "ytl"
     ]
   },
+  "国度": {
+    "aliases": [],
+    "pinyinFull": [
+      "guodu"
+    ],
+    "pinyinInitials": [
+      "gd"
+    ]
+  },
   "图耶": {
     "aliases": [],
     "pinyinFull": [
@@ -1043,6 +1061,15 @@ window.OPERATOR_SEARCH_INDEX = {
       "2226",
       "22t6",
       "aetl"
+    ]
+  },
+  "塔露拉": {
+    "aliases": [],
+    "pinyinFull": [
+      "talula"
+    ],
+    "pinyinInitials": [
+      "tll"
     ]
   },
   "塞雷娅": {
@@ -1169,6 +1196,15 @@ window.OPERATOR_SEARCH_INDEX = {
     ],
     "pinyinInitials": [
       "tkh"
+    ]
+  },
+  "奥尔佳": {
+    "aliases": [],
+    "pinyinFull": [
+      "aoerjia"
+    ],
+    "pinyinInitials": [
+      "aej"
     ]
   },
   "奥斯塔": {
@@ -3917,6 +3953,15 @@ window.OPERATOR_SEARCH_INDEX = {
       "xz"
     ]
   },
+  "行铃": {
+    "aliases": [],
+    "pinyinFull": [
+      "xingling"
+    ],
+    "pinyinInitials": [
+      "xl"
+    ]
+  },
   "衡沙": {
     "aliases": [],
     "pinyinFull": [
@@ -4387,6 +4432,15 @@ window.OPERATOR_SEARCH_INDEX = {
     ],
     "pinyinInitials": [
       "xl"
+    ]
+  },
+  "镜匠": {
+    "aliases": [],
+    "pinyinFull": [
+      "jingjiang"
+    ],
+    "pinyinInitials": [
+      "jj"
     ]
   },
   "闪击": {

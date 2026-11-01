@@ -358,7 +358,9 @@ class AuditCorrectionTests(unittest.TestCase):
                        if game.AUDITED.get(profile["id"], {}).get("air_damage")}
         self.assertFalse(normal_air & confirmed_no_air)
         self.assertFalse(special_air & confirmed_no_air)
-        self.assertEqual((211, 50, 173),
+        # 2026-11 批次新增六名干员：冻河（游击手）计入普通对空，其余五名按
+        # PRTS 分支特性判定为无对空，总数由 434 人增至 440 人。
+        self.assertEqual((212, 50, 178),
                          (len(normal_air), len(special_air), len(confirmed_no_air)))
         self.assertEqual(set(range(len(profiles))),
                          normal_air | special_air | confirmed_no_air)
