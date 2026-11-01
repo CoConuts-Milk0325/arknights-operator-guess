@@ -2,6 +2,8 @@
 
 此仓库构建并发布到 [coconutsmilk.top](https://coconutsmilk.top/)。
 
+首次接手请先阅读[完整项目交接文档（新手版）](docs/项目交接文档.md)，其中包含环境准备、运行与维护步骤、本地资料移交清单、验证、发布与排错说明。重新生成线索和档案所需的部分资料不在 Git 中，换电脑前务必按交接文档备份。
+
 - `/`：双游戏首页
 - `/voice/`：[voice-guess-arknights](voice-guess-arknights/) 语音猜干员
 - `/clues/`：本仓库的四线索猜干员
